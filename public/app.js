@@ -1,3 +1,4 @@
+import { createRetrieval } from './retrieval.js';
 import { createReader } from './reader.js';
 import { createExplorer } from './explorer.js';
 import { createDiscovery } from './discovery.js';
@@ -12,6 +13,7 @@ let modelCatalog = []; let modelConfigured = false; let active = null; let files
 const openFile = createReader(message => toast(message));
 const explorer = createExplorer(openFile);
 const checklist = createChecklist(openFile);
+const retrieval = createRetrieval({setBusy, toast});
 const discovery = createDiscovery(url => importRepository(url, true));
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 async function api(path, body) {
@@ -22,8 +24,9 @@ function toast(message) { $('toast').textContent = message; $('toast').classList
 function setBusy(value) {
   busy = value;
   discovery.setBusy(value);
+  retrieval.setBusy(value);
   for (const node of document.querySelectorAll('button, #repo-url, #mode, #model-choice, #custom-model, #effort-choice')) {
-    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel, #discover') || node.matches('.citation, .file-item')) continue;
+    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel, #discover, #retrieval-panel') || node.matches('.citation, .file-item')) continue;
     node.disabled = value;
   }
   $('stop-button').disabled = !chatController;
@@ -61,7 +64,7 @@ function renderAnswer(container, answer, sources, markdown = true) {
 function addMessage(item) {
   const user = el('article', 'message user'); user.append(el('div', 'message-label', 'YOU'), el('div', 'message-content', item.question));
   const assistant = el('article', 'message assistant'); const label = el('div', 'message-label', 'REPOPILOT');
-  label.append(el('small', '', item.mode === 'agent' ? `AGENT · ${item.model || '默认模型'} · ${item.effort || 'default'}` : '检索摘录 · 未调用模型'));
+  label.append(el('small', '', item.mode === 'agent' ? `AGENT · ${item.model || '默认模型'} · ${item.effort || 'default'}` : '检索摘录 · 未调用生成模型'));
   const content = el('div', 'message-content'); renderAnswer(content, item.answer, item.sources, item.mode === 'agent');
   const trace = el('details', 'trace'); trace.append(el('summary', '', `${item.trace.length} 个执行步骤 · 查看工具记录`));
   const steps = el('ol'); item.trace.forEach(s => steps.append(el('li', '', `${s.label} — ${s.detail}`))); trace.append(steps);
@@ -80,6 +83,7 @@ async function openRepo(id, sessionId) {
   $('coverage').textContent = `当前为部分索引：已收录 ${active.fileCount} 个文件（候选 ${active.totalEligible} 个，失败 ${active.failedFiles?.length || 0} 个）。未收录文件不会作为回答依据。`;
   explorer.setRepository(active, files);
   checklist.setRepository(active);
+  retrieval.setRepository(active);
   $('messages').replaceChildren();
   if (!history.length) { const empty = el('div', 'empty-chat'); empty.append(el('b', '', '从好奇，到理解。'), document.createTextNode('选择一个问题，或描述你想了解的代码。')); $('messages').append(empty); }
   history.forEach(addMessage); renderSources(history.at(-1)?.sources || []); await refreshRepos();
@@ -147,7 +151,7 @@ async function submitQuestion(question, regenerateId) {
   let completed = false; let frame;
   const paint = () => { frame = null; renderAnswer(view.content, item.answer, item.sources, item.mode === 'agent'); $('messages').scrollTop = $('messages').scrollHeight; };
   try {
-    const response = await fetch('/api/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: active.id, sessionId:currentSession.id, regenerateId, question, mode: item.mode, model: item.model, effort: item.effort }), signal: chatController.signal });
+    const response = await fetch('/api/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: active.id, sessionId:currentSession.id, regenerateId, question, mode: item.mode, model: item.model, effort: item.effort, retrieval: $('retrieval-mode').value }), signal: chatController.signal });
     if (!response.ok) { const error = await response.json(); throw Error(error.error || '请求失败'); }
     for await (const message of readSSE(response.body)) {
       const event = JSON.parse(message.data);

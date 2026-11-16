@@ -98,12 +98,14 @@ export function createExplorer(openFile) {
         const code = node('code'); code.append(highlighted(line.text, data.query)); row.append(number, code); preview.append(row);
       }
       card.append(open, preview);
+      if (result.channels) card.append(node('small', 'retrieval-channels', result.channels.map(c => c === 'bm25' ? '关键词命中' : '语义召回').join(' + ')));
       return card;
     }));
     const scope = data.partial ? '当前为部分索引，仅搜索已收录文件。' : '仅搜索当前仓库的已索引文件。';
     $('code-search-status').textContent = data.total
       ? `「${data.query}」找到 ${data.total} 个片段，涉及 ${data.fileCount} 个文件。${data.truncated ? `显示前 ${data.results.length} 条，可添加路径筛选缩小范围。` : ''}${scope}`
       : `未找到「${data.query}」。可缩短关键词、调整路径，或切换到“相关片段”。${scope}`;
+    if (data.retrieval) $('code-search-status').textContent += ` ${data.retrieval.actual === 'hybrid' ? 'BM25 + 向量，RRF 排序。' : '实际使用 BM25。'}${data.retrieval.warning || ''}候选池最多 ${data.candidateLimit} 个片段。`;
   }
 
   $('code-search-form').onsubmit = async event => {

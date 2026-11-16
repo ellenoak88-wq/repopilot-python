@@ -43,6 +43,12 @@
       <div class="project-heading"><div><div class="eyebrow">REPOSITORY EXPLORER</div><h1 id="project-name"></h1><p id="project-description"></p></div><button id="export-button" class="secondary">导出笔记 ↓</button></div>
       <div id="project-stats" class="stats"></div>
       <div id="coverage" class="coverage hidden"></div>
+      <section id="retrieval-panel" class="retrieval-panel" aria-label="混合检索设置">
+        <div class="retrieval-heading"><div><strong id="retrieval-state" role="status">正在检查向量索引…</strong><p id="retrieval-info"></p></div><label>问答检索方式<select id="retrieval-mode"><option value="hybrid">混合检索 · BM25 + 向量</option><option value="bm25">关键词检索 · BM25</option></select></label></div>
+        <div class="retrieval-actions"><button id="retrieval-build" type="button" class="primary">建立向量索引</button><button id="retrieval-refresh" type="button" class="secondary">检查索引状态</button><span>本地计算，无需 Embedding API Key；首次建立需下载约 220 MB 模型权重及分词文件。</span></div>
+        <progress id="retrieval-progress" class="hidden" max="100" value="0" aria-label="向量索引进度"></progress>
+      </section>
+
 <details id="checklist-panel" class="checklist-panel">
   <summary class="checklist-heading"><strong>项目上手清单</strong><span id="checklist-summary">生成路线，记录进度</span></summary>
   <div class="checklist-content">
@@ -66,7 +72,7 @@
     <form id="code-search-form" class="code-search-form">
       <label for="code-search-query">搜索内容</label><input id="code-search-query" maxlength="200" required placeholder="例如 addNote、GET /notes" autocomplete="off">
       <label for="code-search-path">路径筛选（可选）</label><input id="code-search-path" maxlength="200" placeholder="例如 src/ 或 .py" autocomplete="off">
-      <div class="code-search-actions"><select id="code-search-mode" aria-label="搜索方式"><option value="literal">关键词 · 不区分大小写</option><option value="ranked">相关片段</option></select><button id="code-search-button" class="primary" type="submit">搜索</button></div>
+      <div class="code-search-actions"><select id="code-search-mode" aria-label="搜索方式"><option value="literal">关键词 · 不区分大小写</option><option value="ranked">相关片段 · BM25</option><option value="hybrid">混合检索 · BM25 + 向量</option></select><button id="code-search-button" class="primary" type="submit">搜索</button></div>
     </form>
     <p id="code-search-status" class="code-search-status" role="status">输入函数名或关键词搜索代码，无需调用模型。</p>
     <div id="code-search-results"></div>
@@ -76,7 +82,7 @@
     </section>
     <div id="progress-panel" class="progress-panel hidden" role="status"><span class="spinner"></span><div><strong id="progress-text">正在导入…</strong><progress id="progress-bar" max="100" value="0"></progress></div></div>
     <div id="toast" class="toast hidden" role="alert"></div>
-    <footer>REPOPILOT <span>源码有迹可循，探索自有方向。</span><span class="footer-right">PYTHON / v0.5</span></footer>
+    <footer>REPOPILOT <span>源码有迹可循，探索自有方向。</span><span class="footer-right">PYTHON / v0.6</span></footer>
   </main>
   <script src="/app.js" type="module"></script>
 </body>
