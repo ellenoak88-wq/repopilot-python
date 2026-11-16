@@ -16,16 +16,20 @@ def _preview(lines, start, end, focus, query):
     return result
 
 
-def search_files(files, query, *, mode="literal", path_filter="", limit=20):
+def validate_search(query, mode, path_filter, limit):
     if not isinstance(query, str) or not 1 <= len(query.strip()) <= 200:
         raise ValueError("搜索内容需为 1–200 字。")
-    if mode not in ("literal", "ranked"):
+    if mode not in ("literal", "ranked", "hybrid"):
         raise ValueError("不支持的搜索模式。")
     if not isinstance(path_filter, str) or len(path_filter) > 200:
         raise ValueError("路径筛选最多 200 字。")
     if type(limit) is not int or not 1 <= limit <= 50:
         raise ValueError("结果数量需为 1–50。")
-    query, path_filter = query.strip(), path_filter.strip()
+    return query.strip(), path_filter.strip()
+
+
+def search_files(files, query, *, mode="literal", path_filter="", limit=20, candidates=None):
+    query, path_filter = validate_search(query, mode, path_filter, limit)
     scoped = sorted((f for f in files if path_filter.lower() in f["path"].lower()), key=lambda f: f["path"])
     lines_by_path = {f["path"]: f["content"].split("\n") for f in scoped}
     hits = []
@@ -44,12 +48,12 @@ def search_files(files, query, *, mode="literal", path_filter="", limit=20):
                                  "focusStart": number, "focusEnd": number, "matchedLines": [number]})
     else:
         chunks = [c for f in scoped for c in chunk_file(f["path"], f["content"])]
-        candidates = search(chunks, query, len(chunks))
+        candidates = search(chunks, query, len(chunks)) if candidates is None else candidates
         for chunk in candidates:
             # Overlapping chunks of one file should not dominate the results.
             if any(h["path"] == chunk["path"] and max(h["start"], chunk["start"]) <= min(h["end"], chunk["end"]) for h in hits):
                 continue
-            hits.append({k: chunk[k] for k in ("path", "start", "end", "score")})
+            hits.append({k: chunk[k] for k in ("path", "start", "end", "score", "channels", "bm25Rank", "vectorRank") if k in chunk})
     results = []
     for hit in hits[:limit]:
         lines = lines_by_path[hit["path"]]

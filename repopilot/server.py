@@ -13,7 +13,9 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from .agent import ask_agent
 from .checklist import ChecklistConflict, ChecklistService
 from .discovery import DiscoveryService, DiscoveryUnavailable
-from .explorer import search_files
+from .embeddings import make_embedder
+from .hybrid import HybridRetrieval
+from .explorer import search_files, validate_search
 from .github import import_github, parse_repo
 from .models import MODEL_OPTIONS, discover_models, model_config, select_model
 from .store import Store, now
@@ -84,12 +86,13 @@ class CancellableStream(StreamingResponse):
             self.release()
 
 
-def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None, discovery_transport=None):
+def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None, discovery_transport=None, embedder=None):
     port = port or int(os.getenv("PORT", "3211"))
     owned_store = store is None
     store = store or Store(Path(os.getenv("DATA_DIR", str(ROOT / "data"))) / "repopilot.db")
     checklists = ChecklistService(store)
     discovery = DiscoveryService(store, transport=discovery_transport)
+    hybrid = HybridRetrieval(store, embedder or make_embedder(os.getenv("DATA_DIR", str(ROOT / "data"))))
     jobs, tasks = {}, set()
     state = {"busy": False}
 
@@ -145,6 +148,15 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
         finally:
             release()
 
+    async def vector_job(repo, job, force):
+        try:
+            result = await hybrid.build(repo, lambda message, progress: job.update(message=message, progress=progress), force=force)
+            job.update(state="done", progress=100, message="向量索引已就绪", index=result)
+        except Exception as e:
+            job.update(state="error", error=str(e) if isinstance(e, ValueError) else "向量索引建立失败，请检查模型下载网络、磁盘空间或服务端日志。")
+        finally:
+            release()
+
     async def chat(request, body, streaming):
         idle()
         repo = get_repo(body.get("repo"))
@@ -163,8 +175,15 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             question = body.get("question")
         if not isinstance(question, str) or not question.strip() or len(question) > 2000:
             raise ApiError(400, "请输入 1–2000 字的问题。")
+        retrieval_mode = body.get("retrieval", "hybrid")
+        if retrieval_mode not in ("hybrid", "bm25"):
+            raise ApiError(400, "检索方式无效。")
         config = select_model(body.get("model"), body.get("effort"))
-        kwargs = dict(repo=repo, files=store.files(repo["id"]), chunks=store.chunks(repo["id"]), question=question,
+        indexed_chunks = store.chunks(repo["id"])
+
+        async def retrieve(query, limit):
+            return await hybrid.retrieve(repo, indexed_chunks, query, limit, mode=retrieval_mode)
+        kwargs = dict(repo=repo, files=store.files(repo["id"]), chunks=indexed_chunks, question=question, retriever=retrieve,
                       history=context, force_extractive=body.get("mode") == "extractive", config=config)
         state["busy"] = True
 
@@ -249,6 +268,8 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                                                since=q.get("since", "daily"), topic=q.get("topic", ""), refresh=q.get("refresh") == "1")
                 if path == "/api/repos":
                     return store.list()
+                if path == "/api/retrieval/status":
+                    return hybrid.status(get_repo(q.get("repo")))
                 if path == "/api/checklist":
                     return checklists.view(get_repo(q.get("repo")))
                 if path == "/api/search":
@@ -257,8 +278,17 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                         limit = int(q.get("limit", "20"))
                     except ValueError as e:
                         raise ApiError(400, "结果数量需为 1–50。") from e
-                    result = search_files(store.files(repo["id"]), q.get("q", ""), mode=q.get("mode", "literal"),
-                                          path_filter=q.get("path", ""), limit=limit)
+                    mode = q.get("mode", "literal")
+                    query, path_filter = validate_search(q.get("q", ""), mode, q.get("path", ""), limit)
+                    indexed_files = store.files(repo["id"])
+                    retrieved = None
+                    if mode == "hybrid":
+                        retrieved = await hybrid.retrieve(repo, store.chunks(repo["id"]), query, 150, path_filter=path_filter)
+                    result = search_files(indexed_files, query, mode=mode, path_filter=path_filter, limit=limit,
+                                          candidates=retrieved["items"] if retrieved else None)
+                    if retrieved:
+                        result["retrieval"] = {k: retrieved[k] for k in ("requested", "actual", "warning")}
+                        result["candidateLimit"] = 150
                     return {**result, "repo": repo["id"], "sha": repo["sha"], "partial": repo.get("partial", False)}
                 if path == "/api/file":
                     repo = get_repo(q.get("repo"))
@@ -284,6 +314,20 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return store.sessions(repo["id"], q.get("q", "")[:200])
             else:
                 body = await body_json(request)
+                if path == "/api/retrieval/build":
+                    idle()
+                    repo = get_repo(body.get("repo"))
+                    if "force" in body and type(body["force"]) is not bool:
+                        raise ApiError(400, "重建参数必须为布尔值。")
+                    if len(jobs) >= 30:
+                        jobs.pop(next(iter(jobs)))
+                    job = {"id": str(uuid.uuid4()), "state": "running", "progress": 0, "message": "准备建立向量索引"}
+                    jobs[job["id"]] = job
+                    state["busy"] = True
+                    task = asyncio.create_task(vector_job(repo, job, body.get("force", False)))
+                    tasks.add(task)
+                    task.add_done_callback(tasks.discard)
+                    return JSONResponse(job, status_code=202)
                 if path in ("/api/checklist/generate", "/api/checklist/update"):
                     repo = get_repo(body.get("repo"))
                     if path.endswith("/generate"):

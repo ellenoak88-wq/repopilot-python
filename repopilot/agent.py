@@ -17,7 +17,7 @@ TOOLS = [
 ]
 
 
-async def ask_agent(*, repo, files, chunks, question, history=None, force_extractive=False, config=None, on_event=None, transport=None):
+async def ask_agent(*, repo, files, chunks, question, history=None, force_extractive=False, config=None, on_event=None, transport=None, retriever=None):
     config = config or model_config()
     sources, trace = [], []
     emit = on_event or (lambda _: None)
@@ -36,12 +36,20 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
         emit({"type": "source", "source": source})
         return source
 
-    initial = [cite(c) for c in search(chunks, question, 5)]
-    record("检索仓库", f"BM25 检索得到 {len(initial)} 个片段")
+    async def retrieve(query, label):
+        if retriever:
+            result = await retriever(query, 5)
+            record(label, f"{'BM25 + 向量 · RRF' if result['actual'] == 'hybrid' else 'BM25'} 检索得到 {len(result['items'])} 个片段" + (f"；{result['warning']}" if result['warning'] else ""))
+            return [cite(c) for c in result['items']]
+        found = [cite(c) for c in search(chunks, query, 5)]
+        record(label, f"BM25 检索得到 {len(found)} 个片段")
+        return found
+
+    initial = await retrieve(question, "检索仓库")
     if not config["key"] or force_extractive:
-        answer = ("以下是与问题相关的原文摘录。当前为检索模式，未调用模型生成结论。\n\n" +
+        answer = ("以下是与问题相关的原文摘录。当前为检索模式，未调用生成模型。\n\n" +
                   "\n\n".join(f"[{s['id']}] {s['path']}:{s['start']}–{s['end']}\n{s['text'][:1400]}" for s in initial)) if initial else "没有找到相关依据。请补充文件名、函数名或英文关键词；当前索引可能未覆盖目标文件。"
-        record("返回原文", "未调用大模型")
+        record("返回原文", "未调用生成模型")
         emit({"type": "delta", "delta": answer})
         return dict(answer=answer, sources=sources, trace=trace, mode="extractive")
 
@@ -125,8 +133,7 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
                         query = args.get("query")
                         if not isinstance(query, str) or len(query) > 2000:
                             raise ValueError("Invalid query")
-                        output = [cite(c) for c in search(chunks, query, 5)]
-                        record("补充检索", query)
+                        output = await retrieve(query, "补充检索")
                     elif name == "list_files":
                         output = [f["path"] for f in files]
                         record("查看目录", f"{len(files)} 个已索引文件")
