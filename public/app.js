@@ -221,7 +221,7 @@ function updateEfforts(reset = true) {
   $('custom-model-label').classList.toggle('hidden', $('model-choice').value !== '__custom__');
   $('custom-model').disabled = busy || extraction;
   $('effort-choice').disabled = busy || extraction || !spec?.efforts.length;
-  $('model-status').textContent = modelConfigured ? (extraction ? '● 检索模式 · 不调用模型' : `● 当前模型 · ${model || '请输入模型 ID'}`) : '● 检索模式 · 无需 API Key';
+  $('model-status').textContent = modelConfigured ? (extraction ? '● 检索模式 · 不调用生成模型' : `● 当前模型 · ${model || '请输入模型 ID'}`) : '● 检索模式 · 无需 API Key';
   try { if (model) localStorage.setItem('repopilot-model', model); localStorage.setItem('repopilot-effort', $('effort-choice').value); } catch {}
 }
 $('model-choice').onchange = () => updateEfforts();
