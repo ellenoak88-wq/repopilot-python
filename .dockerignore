@@ -1,0 +1,13 @@
+*
+!Dockerfile
+!requirements.txt
+!requirements-dev.txt
+!pyproject.toml
+!repopilot/
+!repopilot/**
+!public/
+!public/**
+!tests/
+!tests/**
+**/__pycache__/
+**/*.pyc

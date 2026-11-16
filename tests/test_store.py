@@ -5,6 +5,7 @@ import pytest
 
 from repopilot.retrieval import chunk_file, search
 from repopilot.store import Store
+from repopilot.migrate import snapshot
 
 META = {"id": "test/repo", "sha": "abc", "demo": True}
 FILES = [{"path": "README.md", "content": "Installation\nRun python -m app\nGetting started"}]
@@ -60,3 +61,19 @@ def test_legacy_node_database_migration(tmp_path):
         assert s.history(META["id"])[0]["answer"] == "preserved"
         assert len(s.sessions(META["id"])) == 1
         s.close()
+
+
+def test_snapshot_includes_wal_and_refuses_overwrite(tmp_path):
+    source = tmp_path / "source.db"
+    target = tmp_path / "copy.db"
+    s = Store(source)
+    s.save_repository(META, FILES)
+    s.add_chat(META["id"], {"question": "test", "answer": "copied"})
+    snapshot(source, target)
+    copy = Store(target)
+    assert copy.history(META["id"])[0]["answer"] == "copied"
+    copy.close()
+    with pytest.raises(ValueError):
+        snapshot(source, target)
+    assert s.history(META["id"])[0]["answer"] == "copied"
+    s.close()

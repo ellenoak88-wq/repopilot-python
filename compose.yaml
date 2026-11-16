@@ -1,0 +1,36 @@
+name: repopilot-python
+services:
+  app:
+    build: .
+    image: repopilot-python:local
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REPOPILOT_PORT:-3211}:3211"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-https://api.openai.com/v1}"
+      LLM_MODEL: "${LLM_MODEL:-gpt-5.4-mini}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      HOST: 0.0.0.0
+      PORT: "3211"
+      PUBLIC_PORT: "${REPOPILOT_PORT:-3211}"
+      DATA_DIR: /app/data
+      HTTP_PROXY: "${DOCKER_HTTP_PROXY:-}"
+      HTTPS_PROXY: "${DOCKER_HTTPS_PROXY:-}"
+      ALL_PROXY: ""
+      NO_PROXY: "localhost,127.0.0.1,::1"
+    volumes:
+      - "${REPOPILOT_DATA_DIR:-./data}:/app/data"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

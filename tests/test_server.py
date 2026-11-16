@@ -77,6 +77,19 @@ async def test_import_job_and_busy_lock(store):
         assert job["repo"]["id"] == REPO
 
 
+async def test_stream_error_is_not_saved_and_releases_lock(store):
+    async def agent(**kwargs):
+        kwargs["on_event"]({"type": "delta", "delta": "partial"})
+        raise ValueError("upstream failed")
+    app = create_app(store=store, agent=agent, port=3211)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as c:
+        response = await c.post("/api/chat/stream", json={"repo": REPO, "question": "test"})
+        events = [json.loads(s[6:]) for s in response.text.split("\n\n") if s.startswith("data: ")]
+        assert events[-1] == {"type": "error", "error": "upstream failed"}
+        assert store.history(REPO) == []
+        assert (await c.post("/api/demo", json={})).status_code == 200
+
+
 @pytest.mark.parametrize("streaming", [True, False])
 async def test_disconnect_cancels_agent_keeps_old_answer_and_unlocks(store, streaming):
     started, cancelled = asyncio.Event(), asyncio.Event()
