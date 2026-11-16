@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "id": "demo/fieldnotes",
+    "name": "fieldnotes",
+    "description": "内置示例 · 一个轻量的笔记 API，用于体验代码检索与上手路线。",
+    "language": "JavaScript",
+    "branch": "main",
+    "sha": "demo",
+    "demo": true,
+    "partial": false,
+    "totalEligible": 5
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "content": "# Fieldnotes\n\nA small notes REST API.\n\n## Getting started / 安装启动\nRequires Node.js 24 or newer.\nRun `node src/server.js` to start on port 3000.\nRun `node --test` to execute tests.\n\n## Architecture / 架构\nsrc/server.js is the HTTP entry point.\nsrc/router.js dispatches GET /notes and POST /notes.\nsrc/store.js keeps notes in memory; restarting clears them.\n\n## API\nGET /notes returns all notes.\nPOST /notes accepts JSON with a non-empty title.\nAuthentication and persistence are not implemented."
+    },
+    {
+      "path": "src/server.js",
+      "content": "import { createServer } from 'node:http';\nimport { router } from './router.js';\n\n// HTTP entry point / 服务入口\ncreateServer(router).listen(3000, '127.0.0.1');"
+    },
+    {
+      "path": "src/router.js",
+      "content": "import { listNotes, addNote } from './store.js';\n\nexport async function router(req, res) {\n  res.setHeader('Content-Type', 'application/json');\n  if (req.method === 'GET' && req.url === '/notes') {\n    return res.end(JSON.stringify(listNotes()));\n  }\n  if (req.method === 'POST' && req.url === '/notes') {\n    let body = '';\n    for await (const part of req) body += part;\n    try {\n      const { title } = JSON.parse(body);\n      if (typeof title !== 'string' || !title.trim()) throw Error('title required');\n      res.statusCode = 201;\n      return res.end(JSON.stringify(addNote(title)));\n    } catch { res.statusCode = 400; return res.end(JSON.stringify({ error: 'Invalid title' })); }\n  }\n  res.statusCode = 404;\n  res.end(JSON.stringify({ error: 'Not found' }));\n}"
+    },
+    {
+      "path": "src/store.js",
+      "content": "import { randomUUID } from 'node:crypto';\nconst notes = [];\nexport const listNotes = () => [...notes];\nexport function addNote(title) {\n  const note = { id: randomUUID(), title };\n  notes.push(note);\n  return note;\n}"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "content": "# Contributing / 贡献\n\n1. Read README.md and follow the request flow from server to router to store.\n2. Add a node:test case before changing behavior.\n3. Run node --test.\n4. Keep pull requests focused.\n\nGood first task: add a health check route GET /health in src/router.js.\nExpected behavior: HTTP 200 with JSON {\"status\":\"ok\"}.\nAdd a test for the new route and existing 404 behavior."
+    }
+  ]
+}
