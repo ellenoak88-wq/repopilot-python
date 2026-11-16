@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from .agent import ask_agent
+from .explorer import search_files
 from .github import import_github, parse_repo
 from .models import MODEL_OPTIONS, discover_models, model_config, select_model
 from .store import Store, now
@@ -239,6 +240,15 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return {"models": await discover_models()}
                 if path == "/api/repos":
                     return store.list()
+                if path == "/api/search":
+                    repo = get_repo(q.get("repo"))
+                    try:
+                        limit = int(q.get("limit", "20"))
+                    except ValueError as e:
+                        raise ApiError(400, "结果数量需为 1–50。") from e
+                    result = search_files(store.files(repo["id"]), q.get("q", ""), mode=q.get("mode", "literal"),
+                                          path_filter=q.get("path", ""), limit=limit)
+                    return {**result, "repo": repo["id"], "sha": repo["sha"], "partial": repo.get("partial", False)}
                 if path == "/api/file":
                     repo = get_repo(q.get("repo"))
                     file = store.file(repo["id"], q.get("path", ""))
