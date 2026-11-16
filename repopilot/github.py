@@ -23,7 +23,7 @@ def eligible(file):
     return (file.get("type") == "blob" and file.get("mode") != "120000" and file.get("size", 80001) <= 80000
             and not re.search(r"(^|/)(node_modules|vendor|dist|build|coverage|\.git|\.next)(/|$)", path, re.I)
             and not re.search(r"(^|/)(\.env[^/]*|.*\.(pem|key|p12)|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$", path, re.I)
-            and bool(re.search(r"\.(md|mdx|txt|rst|js|jsx|mjs|cjs|ts|tsx|py|go|rs|java|rb|php|json|toml|yaml|yml|sh|css|html)$|(^|/)(Dockerfile|Makefile|LICENSE)$", path, re.I)))
+            and bool(re.search(r"\.(md|mdx|txt|rst|js|jsx|mjs|cjs|ts|tsx|py|go|rs|java|rb|php|json|toml|yaml|yml|sh|css|html)$|(^|/)(Dockerfile|Makefile|LICENSE|README|CONTRIBUTING)$", path, re.I)))
 
 
 def priority(file):

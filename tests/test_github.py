@@ -18,6 +18,8 @@ def test_filters_and_parser():
         assert not eligible(dict(path=path, type="blob", size=10))
     assert not eligible(dict(path="src/a.py", type="blob", size=10, mode="120000"))
     assert eligible(dict(path="src/a.py", type="blob", size=10))
+    assert eligible(dict(path="README", type="blob", size=10))
+    assert eligible(dict(path="docs/CONTRIBUTING", type="blob", size=10))
 
 
 async def test_import_pins_commit_and_falls_back_without_token_leak(monkeypatch):
