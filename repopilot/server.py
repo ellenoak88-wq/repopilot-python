@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from .agent import ask_agent
+from .checklist import ChecklistConflict, ChecklistService
 from .explorer import search_files
 from .github import import_github, parse_repo
 from .models import MODEL_OPTIONS, discover_models, model_config, select_model
@@ -86,6 +87,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
     port = port or int(os.getenv("PORT", "3211"))
     owned_store = store is None
     store = store or Store(Path(os.getenv("DATA_DIR", str(ROOT / "data"))) / "repopilot.db")
+    checklists = ChecklistService(store)
     jobs, tasks = {}, set()
     state = {"busy": False}
 
@@ -240,6 +242,8 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return {"models": await discover_models()}
                 if path == "/api/repos":
                     return store.list()
+                if path == "/api/checklist":
+                    return checklists.view(get_repo(q.get("repo")))
                 if path == "/api/search":
                     repo = get_repo(q.get("repo"))
                     try:
@@ -273,6 +277,11 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return store.sessions(repo["id"], q.get("q", "")[:200])
             else:
                 body = await body_json(request)
+                if path in ("/api/checklist/generate", "/api/checklist/update"):
+                    repo = get_repo(body.get("repo"))
+                    if path.endswith("/generate"):
+                        return checklists.generate(repo, body.get("planId"), body.get("revision"))
+                    return checklists.update(repo, body)
                 if path in ("/api/sessions/create", "/api/sessions/rename", "/api/sessions/delete"):
                     idle()
                     repo = get_repo(body.get("repo"))
@@ -309,6 +318,8 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             raise ApiError(404, "接口不存在。")
         except ApiError as e:
             return JSONResponse({"error": e.message}, status_code=e.status)
+        except ChecklistConflict as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
         except Exception:
