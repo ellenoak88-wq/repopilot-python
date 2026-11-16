@@ -1,5 +1,6 @@
 import { createReader } from './reader.js';
 import { createExplorer } from './explorer.js';
+import { createChecklist } from './checklist.js';
 import { sortModels, isListedModel } from './model-order.js';
 import { readSSE } from './sse.js';
 import { renderAnswer as renderMarkdownAnswer } from './render.js';
@@ -9,6 +10,7 @@ let chatController = null;
 let modelCatalog = []; let modelConfigured = false; let active = null; let files = []; let history = []; let busy = false; let toastTimer;
 const openFile = createReader(message => toast(message));
 const explorer = createExplorer(openFile);
+const checklist = createChecklist(openFile);
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -18,7 +20,7 @@ function toast(message) { $('toast').textContent = message; $('toast').classList
 function setBusy(value) {
   busy = value;
   for (const node of document.querySelectorAll('button, #repo-url, #mode, #model-choice, #custom-model, #effort-choice')) {
-    if (node.closest('.code-reader, #sources, .repository-browser') || node.matches('.citation, .file-item')) continue;
+    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel') || node.matches('.citation, .file-item')) continue;
     node.disabled = value;
   }
   $('stop-button').disabled = !chatController;
@@ -74,6 +76,7 @@ async function openRepo(id, sessionId) {
   $('coverage').classList.toggle('hidden', !active.partial);
   $('coverage').textContent = `当前为部分索引：已收录 ${active.fileCount} 个文件（候选 ${active.totalEligible} 个，失败 ${active.failedFiles?.length || 0} 个）。未收录文件不会作为回答依据。`;
   explorer.setRepository(active, files);
+  checklist.setRepository(active);
   $('messages').replaceChildren();
   if (!history.length) { const empty = el('div', 'empty-chat'); empty.append(el('b', '', '从好奇，到理解。'), document.createTextNode('选择一个问题，或描述你想了解的代码。')); $('messages').append(empty); }
   history.forEach(addMessage); renderSources(history.at(-1)?.sources || []); await refreshRepos();
