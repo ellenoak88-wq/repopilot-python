@@ -67,6 +67,8 @@ async def discover_models(config=None):
         if not isinstance(item, dict) or not valid_model(item.get("id")):
             continue
         mid = item["id"]
+        if re.search(r"image|realtime|live", mid, re.I):
+            continue
         created = item.get("created")
         # Keep provider creation time; do not present it as an official release date.
         created = created if type(created) in (int, float) and 0 < created < 253402300800 else None

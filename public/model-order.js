@@ -8,8 +8,12 @@ export function modelTime(model) {
   return typeof model.created === 'number' && Number.isFinite(model.created) && model.created > 0 && model.created < 253402300800 ? model.created * 1000 : 0;
 }
 
+export function isListedModel(id) {
+  return !/image|realtime|live/i.test(id);
+}
+
 export function sortModels(models) {
-  return [...models].sort((a, b) => {
+  return models.filter(model => isListedModel(model.id)).sort((a, b) => {
     const time = modelTime(b) - modelTime(a);
     if (time) return time;
     const av = a.id.match(/^gpt-(\d+)(?:\.(\d+))?/);

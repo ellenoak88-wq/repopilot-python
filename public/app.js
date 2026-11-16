@@ -1,5 +1,5 @@
 import { createReader } from './reader.js';
-import { sortModels } from './model-order.js';
+import { sortModels, isListedModel } from './model-order.js';
 import { readSSE } from './sse.js';
 import { renderAnswer as renderMarkdownAnswer } from './render.js';
 const $ = id => document.getElementById(id);
@@ -183,14 +183,16 @@ function selectedModel() {
   return $('model-choice').value === '__custom__' ? $('custom-model').value.trim() : $('model-choice').value;
 }
 function renderModelChoices(selected = selectedModel()) {
+  const models = sortModels(modelCatalog);
+  if (!isListedModel(selected)) selected = models[0]?.id || '';
   const options = [];
-  for (const model of sortModels(modelCatalog)) {
+  for (const model of models) {
     const option = el('option', '', model.label); option.value = model.id;
     options.push(option);
   }
   const custom = el('option', '', '自定义模型 ID…'); custom.value = '__custom__';
   $('model-choice').replaceChildren(...options, custom);
-  if (modelCatalog.some(m => m.id === selected)) $('model-choice').value = selected;
+  if (models.some(m => m.id === selected)) $('model-choice').value = selected;
   else { $('model-choice').value = '__custom__'; $('custom-model').value = selected; }
 }
 function updateEfforts(reset = true) {
