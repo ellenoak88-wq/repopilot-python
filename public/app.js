@@ -1,5 +1,6 @@
 import { createReader } from './reader.js';
 import { createExplorer } from './explorer.js';
+import { createDiscovery } from './discovery.js';
 import { createChecklist } from './checklist.js';
 import { sortModels, isListedModel } from './model-order.js';
 import { readSSE } from './sse.js';
@@ -11,6 +12,7 @@ let modelCatalog = []; let modelConfigured = false; let active = null; let files
 const openFile = createReader(message => toast(message));
 const explorer = createExplorer(openFile);
 const checklist = createChecklist(openFile);
+const discovery = createDiscovery(url => importRepository(url, true));
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -19,8 +21,9 @@ async function api(path, body) {
 function toast(message) { $('toast').textContent = message; $('toast').classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.add('hidden'), 9000); }
 function setBusy(value) {
   busy = value;
+  discovery.setBusy(value);
   for (const node of document.querySelectorAll('button, #repo-url, #mode, #model-choice, #custom-model, #effort-choice')) {
-    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel') || node.matches('.citation, .file-item')) continue;
+    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel, #discover') || node.matches('.citation, .file-item')) continue;
     node.disabled = value;
   }
   $('stop-button').disabled = !chatController;
@@ -30,7 +33,7 @@ function setBusy(value) {
   if (!value) updateEfforts(false);
 }
 async function refreshRepos() {
-  const repos = await api('/api/repos'); $('repo-count').textContent = repos.length;
+  const repos = await api('/api/repos'); discovery.setImported(repos); $('repo-count').textContent = repos.length;
   $('repo-list').replaceChildren(...repos.map(repo => {
     const button = el('button', `repo-item${active?.id === repo.id ? ' selected' : ''}`, `⑂  ${repo.id}`);
     button.title = repo.id; button.disabled = busy; button.onclick = () => openRepo(repo.id).catch(e => toast(e.message)); return button;
@@ -70,7 +73,7 @@ async function openRepo(id, sessionId) {
   const result = await api(`/api/repo?id=${encodeURIComponent(id)}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`);
   active = result.repo; files = result.files; history = result.history; currentSession=result.session; sessions=result.sessions;
   $('session-search').value=''; renderSessions();
-  $('welcome').classList.add('hidden'); $('project').classList.remove('hidden');
+  showView('project');
   $('breadcrumb').textContent = active.id; $('project-name').textContent = active.name; $('project-description').textContent = active.description;
   $('project-stats').replaceChildren(...[`${active.language}`, `${active.fileCount} 个文件`, `${active.chunkCount} 个片段`, active.demo ? '内置演示数据' : `commit ${active.sha.slice(0, 7)}`].map(t => el('span', '', t)));
   $('coverage').classList.toggle('hidden', !active.partial);
@@ -108,15 +111,22 @@ $('delete-session').onclick=async()=>{
   try{await api('/api/sessions/delete',{repo:active.id,sessionId:currentSession.id});await openRepo(active.id);}catch(error){toast(error.message);}
 };
 $('regenerate-button').onclick=()=>{const latest=history.at(-1);if(latest)submitQuestion(latest.question,latest.id);};
-$('new-repo').onclick = () => { if (busy) return; $('project').classList.add('hidden'); $('welcome').classList.remove('hidden'); $('breadcrumb').textContent = '仓库探索'; $('repo-url').focus(); };
+function showView(view) {
+  ['welcome', 'project', 'discover'].forEach(id => $(id).classList.toggle('hidden', id !== view));
+  $('new-repo').classList.toggle('active', view !== 'discover');
+  $('discover-nav').classList.toggle('active', view === 'discover');
+}
+$('new-repo').onclick = () => { if (busy) return; showView('welcome'); $('breadcrumb').textContent = '仓库探索'; $('repo-url').focus(); };
+$('discover-nav').onclick = () => { if (busy) return; showView('discover'); $('breadcrumb').textContent = '发现项目'; discovery.show(); };
 $('demo-button').onclick = async () => {
   if (busy) return; setBusy(true);
   try { const repo = await api('/api/demo', {}); setBusy(false); await openRepo(repo.id); } catch (e) { toast(e.message); } finally { setBusy(false); }
 };
-$('import-form').onsubmit = async event => {
-  event.preventDefault(); if (busy) return; setBusy(true); $('progress-panel').classList.remove('hidden'); $('progress-text').textContent = '准备导入…'; $('progress-bar').value = 0;
+$('import-form').onsubmit = event => { event.preventDefault(); importRepository($('repo-url').value); };
+async function importRepository(url, reuseExisting = false) {
+  if (busy) return; setBusy(true); $('progress-panel').classList.remove('hidden'); $('progress-text').textContent = '准备导入…'; $('progress-bar').value = 0;
   try {
-    let job = await api('/api/import', { url: $('repo-url').value });
+    let job = await api('/api/import', { url, reuseExisting });
     while (job.state === 'running') {
       $('progress-text').textContent = job.message; $('progress-bar').value = job.progress;
       await new Promise(resolve => setTimeout(resolve, 700)); job = await api(`/api/jobs/${job.id}`);
@@ -124,7 +134,7 @@ $('import-form').onsubmit = async event => {
     if (job.state === 'error') throw Error(job.error);
     setBusy(false); await openRepo(job.repo.id);
   } catch (e) { toast(e.message); } finally { setBusy(false); $('progress-panel').classList.add('hidden'); }
-};
+}
 async function submitQuestion(question, regenerateId) {
   if (!active || busy || !question.trim()) return;
   if ($('mode').value === 'agent' && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(selectedModel())) { toast('请选择模型或输入有效的模型 ID。'); return; }

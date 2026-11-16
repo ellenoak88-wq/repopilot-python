@@ -84,3 +84,31 @@
 .checklist-notes small,.checklist-evidence small{font-size:10px;color:#8c998f}
 .checklist-gap,.checklist-empty{font-size:12px;color:#8a948e;line-height:1.8;margin:8px 0}
 @media(max-width:700px){.checklist-stages{grid-template-columns:1fr}.checklist-content{padding:12px}.checklist-heading{padding:12px}.checklist-heading span{display:block;margin-left:16px}.checklist-toolbar{align-items:stretch}}
+
+
+/* GitHub discovery */
+.discover { max-width:1200px; margin:0 auto; padding:40px 38px; }
+.discover h1 { font-size:clamp(25px,3vw,37px); letter-spacing:-1px; margin:18px 0 12px; }
+.discover .subtitle { font-size:15px; margin-bottom:28px; }
+.discover-toolbar { display:flex; flex-wrap:wrap; gap:16px; align-items:end; padding:20px; border:1px solid #dce4df; border-radius:12px; background:#fff; }
+.discover-toolbar label { display:grid; gap:8px; font-size:12px; color:#53665d; flex:1; min-width:150px; }
+.discover-toolbar select { width:100%; min-height:40px; padding:8px 12px; border:1px solid #dce4df; border-radius:7px; background:#fafcfb; color:#253c32; font:inherit; font-size:14px; }
+.discover-toolbar button { min-height:40px; }
+.discover-note { color:#68796e; font-size:12px; line-height:1.8; margin:14px 0; }
+.discover-meta { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:20px 0 14px; font-size:12px; color:#607366; }
+.discover-meta p { margin:0; }
+.discover a { color:#087c68; text-decoration:none; }
+.discover a:hover { text-decoration:underline; }
+.discover-warning { padding:12px 16px; background:#fff7df; border:1px solid #ead59b; border-radius:8px; color:#775b23; font-size:13px; line-height:1.7; }
+.discover-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.discover-card { display:flex; flex-direction:column; padding:24px; border:1px solid #dce4df; border-radius:12px; background:#fff; min-width:0; }
+.discover-rank { color:#087c68; font-size:11px; font-weight:650; letter-spacing:1px; }
+.discover-card h2 { font-size:19px; margin:14px 0 12px; overflow-wrap:anywhere; }
+.discover-description { font-size:14px; line-height:1.7; color:#596b60; margin:0 0 20px; overflow-wrap:anywhere; flex:1; }
+.discover-stats { display:flex; flex-wrap:wrap; gap:15px; font-size:12px; color:#586d5f; }
+.discover-growth { margin:12px 0 0; font-size:12px; color:#087c68; }
+.discover-actions { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-top:20px; padding-top:18px; border-top:1px solid #edf0ec; font-size:12px; }
+.discover-actions button { font-size:12px; }
+@media(max-width:900px) { .discover { padding:26px 22px; } .discover-grid { grid-template-columns:1fr; } }
+@media(max-width:520px) { .discover { padding:24px 16px; } .discover-toolbar { padding:16px; } .discover-toolbar label { min-width:100%; } .discover-toolbar button { width:100%; } .discover-meta { align-items:start; flex-direction:column; } .discover-card { padding:20px; } }
+@media(max-width:800px) { .sidebar { flex-wrap:wrap; gap:10px; } .sidebar .brand { flex-basis:100%; } .sidebar .nav { flex:1; margin-left:0; white-space:nowrap; } .sidebar .repo-list { flex-basis:100%; max-width:none; } }

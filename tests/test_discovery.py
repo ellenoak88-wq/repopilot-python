@@ -121,3 +121,19 @@ async def test_routes_validation_and_reuse_preserves_existing_data(store):
     broken = create_app(store=store, discovery_transport=httpx.MockTransport(lambda _: httpx.Response(502)))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=broken), base_url='http://127.0.0.1:3211') as client:
         assert (await client.get('/api/discover?language=Rust')).status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_reuse_imports_new_repository_through_existing_job(store):
+    calls = []
+    async def importer(value, progress):
+        calls.append(value)
+        return DEMO
+    app = create_app(store=store, importer=importer)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://127.0.0.1:3211') as client:
+        response = await client.post('/api/import', json={'url': 'demo/fieldnotes', 'reuseExisting': True})
+        assert response.status_code == 202
+        await asyncio.sleep(0)
+        job = (await client.get('/api/jobs/' + response.json()['id'])).json()
+        assert job['state'] == 'done' and calls == ['demo/fieldnotes']
+        assert store.get('demo/fieldnotes')['fileCount'] == len(DEMO['files'])
