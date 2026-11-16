@@ -1,4 +1,5 @@
 import { createReader } from './reader.js';
+import { createExplorer } from './explorer.js';
 import { sortModels, isListedModel } from './model-order.js';
 import { readSSE } from './sse.js';
 import { renderAnswer as renderMarkdownAnswer } from './render.js';
@@ -7,6 +8,7 @@ let currentSession = null; let sessions = []; let sessionSearchVersion = 0;
 let chatController = null;
 let modelCatalog = []; let modelConfigured = false; let active = null; let files = []; let history = []; let busy = false; let toastTimer;
 const openFile = createReader(message => toast(message));
+const explorer = createExplorer(openFile);
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -16,7 +18,7 @@ function toast(message) { $('toast').textContent = message; $('toast').classList
 function setBusy(value) {
   busy = value;
   for (const node of document.querySelectorAll('button, #repo-url, #mode, #model-choice, #custom-model, #effort-choice')) {
-    if (node.closest('.code-reader, #sources') || node.matches('.citation, .file-item')) continue;
+    if (node.closest('.code-reader, #sources, .repository-browser') || node.matches('.citation, .file-item')) continue;
     node.disabled = value;
   }
   $('stop-button').disabled = !chatController;
@@ -31,10 +33,6 @@ async function refreshRepos() {
     const button = el('button', `repo-item${active?.id === repo.id ? ' selected' : ''}`, `⑂  ${repo.id}`);
     button.title = repo.id; button.disabled = busy; button.onclick = () => openRepo(repo.id).catch(e => toast(e.message)); return button;
   }));
-}
-function renderFiles() {
-  const needle = $('file-filter').value.toLowerCase();
-  $('file-list').replaceChildren(...files.filter(f => f.path.toLowerCase().includes(needle)).map(f => { const row = el('button', 'file-item'); row.type = 'button'; row.onclick = () => openFile(active.id, f.path); row.append(el('span', '', '⌑'), document.createTextNode(f.path)); row.title = `${f.lines} 行`; return row; }));
 }
 function renderSources(sources) {
   $('source-count').textContent = sources.length;
@@ -75,7 +73,7 @@ async function openRepo(id, sessionId) {
   $('project-stats').replaceChildren(...[`${active.language}`, `${active.fileCount} 个文件`, `${active.chunkCount} 个片段`, active.demo ? '内置演示数据' : `commit ${active.sha.slice(0, 7)}`].map(t => el('span', '', t)));
   $('coverage').classList.toggle('hidden', !active.partial);
   $('coverage').textContent = `当前为部分索引：已收录 ${active.fileCount} 个文件（候选 ${active.totalEligible} 个，失败 ${active.failedFiles?.length || 0} 个）。未收录文件不会作为回答依据。`;
-  $('file-count').textContent = active.fileCount; $('file-filter').value = ''; renderFiles();
+  explorer.setRepository(active, files);
   $('messages').replaceChildren();
   if (!history.length) { const empty = el('div', 'empty-chat'); empty.append(el('b', '', '从好奇，到理解。'), document.createTextNode('选择一个问题，或描述你想了解的代码。')); $('messages').append(empty); }
   history.forEach(addMessage); renderSources(history.at(-1)?.sources || []); await refreshRepos();
@@ -173,7 +171,6 @@ $('stop-button').onclick = () => chatController?.abort();
 $('chat-form').onsubmit = e => { e.preventDefault(); submitQuestion($('question').value); };
 $('question').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submitQuestion($('question').value); } };
 document.querySelectorAll('[data-question]').forEach(button => button.onclick = () => submitQuestion(button.dataset.question));
-$('file-filter').oninput = renderFiles;
 $('export-button').onclick = () => {
   if (!active) return;
   const text = `# ${active.id} · ${currentSession?.title || '探索笔记'}\n\nCommit: ${active.sha}\n\n` + history.map(h => `## ${h.question}\n\n${h.answer}\n\n### 参考来源\n${h.sources.map(s => `- [${s.id}] ${s.path}:${s.start}–${s.end}${s.url ? ` (${s.url})` : ''}`).join('\n')}`).join('\n\n---\n\n');
