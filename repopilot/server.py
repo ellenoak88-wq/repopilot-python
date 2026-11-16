@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 
 from .agent import ask_agent
 from .checklist import ChecklistConflict, ChecklistService
+from .discovery import DiscoveryService, DiscoveryUnavailable
 from .explorer import search_files
 from .github import import_github, parse_repo
 from .models import MODEL_OPTIONS, discover_models, model_config, select_model
@@ -83,11 +84,12 @@ class CancellableStream(StreamingResponse):
             self.release()
 
 
-def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None):
+def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None, discovery_transport=None):
     port = port or int(os.getenv("PORT", "3211"))
     owned_store = store is None
     store = store or Store(Path(os.getenv("DATA_DIR", str(ROOT / "data"))) / "repopilot.db")
     checklists = ChecklistService(store)
+    discovery = DiscoveryService(store, transport=discovery_transport)
     jobs, tasks = {}, set()
     state = {"busy": False}
 
@@ -240,6 +242,11 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return {"modelConfigured": bool(cfg["key"]), "model": cfg["model"], "models": options, "backend": "python"}
                 if path == "/api/models":
                     return {"models": await discover_models()}
+                if path == "/api/discover":
+                    if q.get("refresh", "0") not in ("0", "1"):
+                        raise ApiError(400, "刷新参数无效。")
+                    return await discovery.get(source=q.get("source", "trending"), language=q.get("language", ""),
+                                               since=q.get("since", "daily"), topic=q.get("topic", ""), refresh=q.get("refresh") == "1")
                 if path == "/api/repos":
                     return store.list()
                 if path == "/api/checklist":
@@ -304,6 +311,12 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                 if path == "/api/import":
                     idle()
                     value = parse_repo(body.get("url"))
+                    if "reuseExisting" in body and type(body["reuseExisting"]) is not bool:
+                        raise ApiError(400, "复用参数必须为布尔值。")
+                    if body.get("reuseExisting"):
+                        existing = next((r for r in store.list() if r["id"].lower() == value.lower()), None)
+                        if existing:
+                            return {"state": "done", "progress": 100, "message": "仓库已导入", "repo": existing}
                     if len(jobs) >= 30:
                         jobs.pop(next(iter(jobs)))
                     job = {"id": str(uuid.uuid4()), "state": "running", "progress": 0, "message": "准备导入"}
@@ -318,6 +331,8 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             raise ApiError(404, "接口不存在。")
         except ApiError as e:
             return JSONResponse({"error": e.message}, status_code=e.status)
+        except DiscoveryUnavailable as e:
+            return JSONResponse({"error": str(e)}, status_code=503)
         except ChecklistConflict as e:
             return JSONResponse({"error": str(e)}, status_code=409)
         except ValueError as e:
