@@ -27,3 +27,8 @@ docker compose down
 `down` 停止并删除容器，保留宿主机 `data`。健康检查使用 `/api/health`。容器根文件系统只读，数据库写入 `/app/data`，临时文件写入 `/tmp`。
 
 不要复制正在使用的 SQLite 主文件来代替完整备份；使用 `python -m repopilot.migrate` 创建一致性快照。Python 版与 Node.js 版使用不同 Compose 项目、镜像、端口和数据库目录。
+
+
+## 本地向量模型
+
+混合检索使用 CPU，不要求 GPU 或 Embedding API Key。首次建立向量索引需下载模型；完整缓存位于 `/app/data/models`，随现有数据卷保留。SQLite 的 `vector_indexes` 表也随卷持久化。模型权重不会进入 Git 或构建上下文。现有 Docker HTTP/HTTPS 代理配置同样用于模型下载；`HF_HUB_DISABLE_XET=1` 使用常规 HTTP 下载。索引完成后，缓存完整时可离线查询。

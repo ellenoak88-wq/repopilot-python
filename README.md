@@ -5,7 +5,7 @@
 ## 功能
 
 - 按固定 commit 导入公开 GitHub 仓库，优先 README、入口代码和贡献指南；最多 100 个文本文件，每个不超过 80 KB，显示部分索引提示。
-- BM25 检索与中文查询扩展；Agent 可继续搜索代码、读取文件、查看目录，最多 4 轮只读工具调用。
+- BM25 + 本地多语言向量混合检索，RRF 排名融合；支持索引建立、过期检查、持久化和 BM25 回退。Agent 首次检索与补充搜索统一使用所选方式，最多 4 轮只读工具调用。参见 [第五轮扩展说明](docs/upgrade-05.md)。
 - Responses / Chat Completions 兼容接口，真实 SSE 流式输出、停止生成、引用核验与安全 Markdown 渲染。
 - GPT-5.6、6、6.1 的 sol / astra / luna / terra 预设、思考强度、模型发现及手动输入。预设不保证账号或服务商支持，以实际接口返回为准。
 - 源码阅读器、引用行高亮、文件内搜索、行号跳转、复制。
@@ -63,7 +63,7 @@ uv sync --frozen
 uv run pytest -q
 ```
 
-模块：`server.py` 提供 HTTP/SSE 接口；`agent.py` 编排 RAG 和工具调用；`stream.py` 解析模型流；`github.py` 导入仓库；`retrieval.py` 切片与 BM25；`store.py` 管理数据与会话；`models.py` 配置模型。全部位于 `repopilot/`。
+模块：`server.py` 提供 HTTP/SSE 接口；`agent.py` 编排 RAG 和工具调用；`stream.py` 解析模型流；`github.py` 导入仓库；`retrieval.py` 切片与 BM25；`store.py` 管理数据与会话；`models.py` 配置聊天模型；`embeddings.py` 运行本地向量模型；`hybrid.py` 管理向量索引和排名融合。全部位于 `repopilot/`。
 
 升级依赖后执行 `uv lock`，再用 `uv export --frozen --no-dev --no-emit-project --output-file requirements.txt` 和 `uv export --frozen --no-emit-project --output-file requirements-dev.txt` 同步 pip/Docker 锁定文件。
 
@@ -71,4 +71,4 @@ uv run pytest -q
 
 面向个人本地使用，未实现多用户认证。只运行一个 Uvicorn worker，以保持导入和生成的操作锁；不要直接发布到公网。导入的仓库内容仅作为不可信证据，不会执行其中的代码或命令。首页手动重新导入仓库会替换索引并清除该仓库的旧会话，避免混用不同提交的证据。「发现项目」入口会复用已导入仓库，保留现有会话和进度。
 
-检索仍为 BM25，不含向量数据库或嵌入模型；代码索引最多 100 个文件。原生前端和第三方 Markdown 库来自 Node.js 版；第三方许可证保留在 `public/vendor/`。
+关键词检索使用 BM25；混合检索使用本地 FastEmbed 模型，向量存入 SQLite，无需外部向量数据库。首次建立向量索引需下载模型权重，缺失或过期时明确回退 BM25；代码索引最多 100 个文件，向量窗口最多 10,000 个。原生前端和第三方 Markdown 库来自 Node.js 版；第三方许可证保留在 `public/vendor/`。
