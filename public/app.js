@@ -4,7 +4,7 @@ import { renderAnswer as renderMarkdownAnswer } from './render.js';
 const $ = id => document.getElementById(id);
 let currentSession = null; let sessions = []; let sessionSearchVersion = 0;
 let chatController = null;
-let modelCatalog = []; let active = null; let files = []; let history = []; let busy = false; let toastTimer;
+let modelCatalog = []; let modelConfigured = false; let active = null; let files = []; let history = []; let busy = false; let toastTimer;
 const openFile = createReader(message => toast(message));
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 async function api(path, body) {
@@ -14,7 +14,7 @@ async function api(path, body) {
 function toast(message) { $('toast').textContent = message; $('toast').classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.add('hidden'), 9000); }
 function setBusy(value) {
   busy = value;
-  for (const node of document.querySelectorAll('button, #repo-url, #mode, #model-choice, #effort-choice')) {
+  for (const node of document.querySelectorAll('button, #repo-url, #mode, #model-choice, #custom-model, #effort-choice')) {
     if (node.closest('.code-reader, #sources') || node.matches('.citation, .file-item')) continue;
     node.disabled = value;
   }
@@ -125,10 +125,11 @@ $('import-form').onsubmit = async event => {
 };
 async function submitQuestion(question, regenerateId) {
   if (!active || busy || !question.trim()) return;
+  if ($('mode').value === 'agent' && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(selectedModel())) { toast('请选择模型或输入有效的模型 ID。'); return; }
   chatController = new AbortController();
   setBusy(true); $('send-button').textContent = '生成中…'; $('toast').classList.add('hidden');
   $('messages').querySelector('.empty-chat')?.remove();
-  const item = { question, answer: '', sources: [], trace: [], mode: $('mode').value, model: $('model-choice').value, effort: $('effort-choice').value };
+  const item = { question, answer: '', sources: [], trace: [], mode: $('mode').value, model: selectedModel(), effort: $('effort-choice').value };
   const view = addMessage(item);
   view.content.textContent = '正在检索代码…';
   let completed = false; let frame;
@@ -177,25 +178,45 @@ $('export-button').onclick = () => {
   const text = `# ${active.id} · ${currentSession?.title || '探索笔记'}\n\nCommit: ${active.sha}\n\n` + history.map(h => `## ${h.question}\n\n${h.answer}\n\n### 参考来源\n${h.sources.map(s => `- [${s.id}] ${s.path}:${s.start}–${s.end}${s.url ? ` (${s.url})` : ''}`).join('\n')}`).join('\n\n---\n\n');
   const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' })); const a = el('a'); a.href = url; a.download = `${active.name}-${currentSession.id.slice(0,8)}-notes.md`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
+function selectedModel() {
+  return $('model-choice').value === '__custom__' ? $('custom-model').value.trim() : $('model-choice').value;
+}
+function renderModelChoices(selected = selectedModel()) {
+  const groups = [el('optgroup'), el('optgroup')];
+  groups[0].label = '接口返回的模型'; groups[1].label = '预设模型 · 需服务商支持';
+  for (const model of modelCatalog) {
+    const option = el('option', '', model.label); option.value = model.id;
+    groups[model.discovered ? 0 : 1].append(option);
+  }
+  const custom = el('option', '', '自定义模型 ID…'); custom.value = '__custom__';
+  $('model-choice').replaceChildren(...groups.filter(g => g.children.length), custom);
+  if (modelCatalog.some(m => m.id === selected)) $('model-choice').value = selected;
+  else { $('model-choice').value = '__custom__'; $('custom-model').value = selected; }
+}
 function updateEfforts(reset = true) {
   const previous = reset ? 'default' : $('effort-choice').value;
-  const spec = modelCatalog.find(m => m.id === $('model-choice').value) || { efforts: /^gpt-(?:[6-9]|[1-9][0-9]|5\.)/.test($('model-choice').value) ? ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] : [] };
+  const model = selectedModel();
+  const spec = modelCatalog.find(m => m.id === model) || { efforts: /^gpt-(?:[6-9]|[1-9][0-9]|5\.)/.test(model) ? ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] : [] };
   const labels = { default: '模型默认', none: '不启用推理', low: '低', medium: '中 · 推荐', high: '高', xhigh: '极高', max: '最高', ultra: '超高' };
   $('effort-choice').replaceChildren(...['default', ...(spec?.efforts || [])].map(v => { const o = el('option', '', labels[v]); o.value = v; return o; }));
   $('effort-choice').value = [...$('effort-choice').options].some(o => o.value === previous) ? previous : 'default';
   const extraction = $('mode').value === 'extractive';
   $('model-choice').disabled = busy || extraction;
+  $('custom-model-label').classList.toggle('hidden', $('model-choice').value !== '__custom__');
+  $('custom-model').disabled = busy || extraction;
   $('effort-choice').disabled = busy || extraction || !spec?.efforts.length;
-  try { localStorage.setItem('repopilot-model', $('model-choice').value); localStorage.setItem('repopilot-effort', $('effort-choice').value); } catch {}
+  $('model-status').textContent = modelConfigured ? (extraction ? '● 检索模式 · 不调用模型' : `● 当前模型 · ${model || '请输入模型 ID'}`) : '● 检索模式 · 无需 API Key';
+  try { if (model) localStorage.setItem('repopilot-model', model); localStorage.setItem('repopilot-effort', $('effort-choice').value); } catch {}
 }
 $('model-choice').onchange = () => updateEfforts();
+$('custom-model').oninput = () => updateEfforts();
 $('refresh-models').onclick = async () => {
   if (busy) return;
   setBusy(true);
   try {
     const data = await api('/api/models');
     modelCatalog = [...data.models, ...modelCatalog.filter(m => !data.models.some(p => p.id === m.id))];
-    $('model-list').replaceChildren(...modelCatalog.map(m => { const o = el('option', '', m.label); o.value = m.id; return o; }));
+    renderModelChoices();
     $('model-hint').textContent = `接口返回 ${data.models.length} 个模型；未返回的预设需由服务商确认。`;
   } catch (error) { toast(error.message); } finally { setBusy(false); }
 };
@@ -203,13 +224,12 @@ $('effort-choice').onchange = () => updateEfforts(false);
 $('mode').onchange = () => updateEfforts(false);
 async function init() {
   try {
-    const status = await api('/api/status'); $('model-status').textContent = status.modelConfigured ? `● Agent 已配置 · ${status.model}` : '● 检索模式 · 无需 API Key';
+    const status = await api('/api/status'); modelConfigured = status.modelConfigured;
     if (!status.modelConfigured) { $('mode').value = 'extractive'; $('mode').querySelector('[value="agent"]').disabled = true; }
     modelCatalog = status.models;
-    $('model-list').replaceChildren(...modelCatalog.map(m => { const o = el('option', '', m.label); o.value = m.id; return o; }));
     let savedModel, savedEffort;
     try { savedModel = localStorage.getItem('repopilot-model'); savedEffort = localStorage.getItem('repopilot-effort'); } catch {}
-    $('model-choice').value = savedModel && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(savedModel) ? savedModel : status.model;
+    renderModelChoices(savedModel && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(savedModel) ? savedModel : status.model);
     updateEfforts();
     if ([...$('effort-choice').options].some(o => o.value === savedEffort)) $('effort-choice').value = savedEffort;
     updateEfforts(false);
