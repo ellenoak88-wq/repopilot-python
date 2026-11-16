@@ -1,4 +1,5 @@
 import { createReader } from './reader.js';
+import { sortModels } from './model-order.js';
 import { readSSE } from './sse.js';
 import { renderAnswer as renderMarkdownAnswer } from './render.js';
 const $ = id => document.getElementById(id);
@@ -182,14 +183,13 @@ function selectedModel() {
   return $('model-choice').value === '__custom__' ? $('custom-model').value.trim() : $('model-choice').value;
 }
 function renderModelChoices(selected = selectedModel()) {
-  const groups = [el('optgroup'), el('optgroup')];
-  groups[0].label = '接口返回的模型'; groups[1].label = '预设模型 · 需服务商支持';
-  for (const model of modelCatalog) {
+  const options = [];
+  for (const model of sortModels(modelCatalog)) {
     const option = el('option', '', model.label); option.value = model.id;
-    groups[model.discovered ? 0 : 1].append(option);
+    options.push(option);
   }
   const custom = el('option', '', '自定义模型 ID…'); custom.value = '__custom__';
-  $('model-choice').replaceChildren(...groups.filter(g => g.children.length), custom);
+  $('model-choice').replaceChildren(...options, custom);
   if (modelCatalog.some(m => m.id === selected)) $('model-choice').value = selected;
   else { $('model-choice').value = '__custom__'; $('custom-model').value = selected; }
 }
@@ -210,16 +210,17 @@ function updateEfforts(reset = true) {
 }
 $('model-choice').onchange = () => updateEfforts();
 $('custom-model').oninput = () => updateEfforts();
-$('refresh-models').onclick = async () => {
+async function refreshModels(quiet = false) {
   if (busy) return;
   setBusy(true);
   try {
     const data = await api('/api/models');
     modelCatalog = [...data.models, ...modelCatalog.filter(m => !data.models.some(p => p.id === m.id))];
     renderModelChoices();
-    $('model-hint').textContent = `接口返回 ${data.models.length} 个模型；未返回的预设需由服务商确认。`;
-  } catch (error) { toast(error.message); } finally { setBusy(false); }
-};
+    $('model-hint').textContent = `接口返回 ${data.models.length} 个模型。按时间从新到旧：优先版本日期，其余用接口创建时间；无时间预设置底并按版本倒序，需服务商支持。`;
+  } catch (error) { if (!quiet) toast(error.message); } finally { setBusy(false); }
+}
+$('refresh-models').onclick = () => refreshModels();
 $('effort-choice').onchange = () => updateEfforts(false);
 $('mode').onchange = () => updateEfforts(false);
 async function init() {
@@ -234,6 +235,7 @@ async function init() {
     if ([...$('effort-choice').options].some(o => o.value === savedEffort)) $('effort-choice').value = savedEffort;
     updateEfforts(false);
     await refreshRepos();
+    if (modelConfigured) await refreshModels(true);
   } catch (e) { $('model-status').textContent = '连接失败'; toast(e.message); }
 }
 init();

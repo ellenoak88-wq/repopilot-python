@@ -62,5 +62,13 @@ async def discover_models(config=None):
     data = response.json().get("data")
     if not isinstance(data, list):
         raise ValueError("服务商返回了无效的模型列表。")
-    ids = sorted({m["id"] for m in data if isinstance(m, dict) and valid_model(m.get("id"))})
-    return [{**model_spec(mid), "label": mid + " · 接口返回", "discovered": True} for mid in ids]
+    models = {}
+    for item in data:
+        if not isinstance(item, dict) or not valid_model(item.get("id")):
+            continue
+        mid = item["id"]
+        created = item.get("created")
+        # Keep provider creation time; do not present it as an official release date.
+        created = created if type(created) in (int, float) and 0 < created < 253402300800 else None
+        models[mid] = {**model_spec(mid), "label": mid + " · 接口返回", "discovered": True, "created": created}
+    return sorted(models.values(), key=lambda m: (-(m["created"] or 0), m["id"]))
