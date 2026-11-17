@@ -24,7 +24,7 @@ from .store import Store, now
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = json.loads((Path(__file__).parent / "demo.json").read_text(encoding="utf-8"))
-ASSETS = {"/": "index.html", **{f"/{name}": name for name in ("app.js", "style.css", "render.js", "sse.js", "reader.js", "model-order.js", "explorer.js", "checklist.js", "discovery.js", "retrieval.js", "learning.js", "sections.js", "vendor/marked.js", "vendor/purify.js")}}
+ASSETS = {"/": "index.html", **{f"/{name}": name for name in ("app.js", "style.css", "render.js", "sse.js", "reader.js", "model-order.js", "explorer.js", "checklist.js", "discovery.js", "retrieval.js", "learning.js", "sections.js", "session-list.js", "vendor/marked.js", "vendor/purify.js")}}
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
     "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -381,18 +381,20 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     if path.endswith("/generate"):
                         return checklists.generate(repo, body.get("planId"), body.get("revision"))
                     return checklists.update(repo, body)
-                if path in ("/api/sessions/create", "/api/sessions/rename", "/api/sessions/delete"):
+                if path in ("/api/sessions/create", "/api/sessions/rename", "/api/sessions/delete", "/api/sessions/pin"):
                     idle()
                     repo = get_repo(body.get("repo"))
                     action = path.rsplit("/", 1)[-1]
                     sid, title = body.get("sessionId"), body.get("title")
                     if action != "create" and (not isinstance(sid, str) or not store.get_session(repo["id"], sid)):
                         raise ApiError(404, "会话不存在。")
-                    if action != "delete" and (not isinstance(title, str) or not 1 <= len(title.strip()) <= 80):
+                    if action in ("create", "rename") and (not isinstance(title, str) or not 1 <= len(title.strip()) <= 80):
                         raise ApiError(400, "会话名称需为 1–80 字。")
                     if action == "create":
                         return JSONResponse(store.create_session(repo["id"], title.strip()), status_code=201)
-                    if action == "rename":
+                    if action == "pin":
+                        store.pin_session(repo["id"], sid, body.get("pinned"))
+                    elif action == "rename":
                         store.rename_session(repo["id"], sid, title.strip())
                     else:
                         store.delete_session(repo["id"], sid)

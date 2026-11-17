@@ -1,3 +1,4 @@
+import { createSessionList } from './session-list.js';
 import { createSections } from './sections.js';
 import { createLearning } from './learning.js';
 import { createRetrieval } from './retrieval.js';
@@ -10,7 +11,7 @@ import { readSSE } from './sse.js';
 import { renderAnswer as renderMarkdownAnswer } from './render.js';
 const $ = id => document.getElementById(id);
 let currentSession = null; let sessions = []; let sessionSearchVersion = 0;
-let chatController = null;
+let chatController = null; let repoOpenVersion=0;
 let modelCatalog = []; let modelConfigured = false; let active = null; let files = []; let history = []; let busy = false; let toastTimer;
 const openFile = createReader(message => toast(message));
 const explorer = createExplorer(openFile);
@@ -19,6 +20,7 @@ const retrieval = createRetrieval({setBusy, toast});
 const discovery = createDiscovery(url => importRepository(url, true));
 const learning = createLearning({api, toast});
 const sectionsUI = createSections({api,toast,onChange:refreshRepos});
+const sessionUI = createSessionList({root:$('session-list'),onSelect:id=>openRepo(active.id,id).catch(e=>toast(e.message)),onAction:sessionAction});
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -38,7 +40,7 @@ function setBusy(value) {
   }
   $('stop-button').disabled = !chatController;
   $('stop-button').classList.toggle('hidden', !chatController);
-  $('session-choice').disabled=value; $('session-search').disabled=value;
+  sessionUI.setBusy(value); $('session-search').disabled=value;
   $('regenerate-button').disabled=value || !history.length || historical(history.at(-1));
   $('sync-button').disabled=value || !active || active.demo;
   if (!value) updateEfforts(false);
@@ -100,7 +102,9 @@ function addMessage(item) {
 }
 async function openRepo(id, sessionId) {
   if (busy) return;
+  const opening=++repoOpenVersion; ++sessionSearchVersion;
   const result = await api(`/api/repo?id=${encodeURIComponent(id)}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`);
+  if(opening!==repoOpenVersion)return;
   active = result.repo; files = result.files; history = result.history; currentSession=result.session; sessions=result.sessions;
   $('session-search').value=''; renderSessions();
   showView('project');
@@ -122,29 +126,33 @@ async function openRepo(id, sessionId) {
   $('question').focus();
 }
 function renderSessions(items = sessions) {
-  $('session-choice').replaceChildren(...items.map(session=>{const option=el('option','',`${session.title} (${session.messageCount || 0})`);option.value=session.id;return option;}));
-  if(items.some(s=>s.id===currentSession?.id))$('session-choice').value=currentSession.id;
-  else $('session-choice').selectedIndex=-1;
+  sessionUI.render(items,currentSession?.id);
   $('session-title').textContent=currentSession?.title || '会话';
-  $('session-count').textContent=`${items.length} 个会话`;
+  $('session-count').textContent=`${items.length} 个会话${$('session-search').value ? ' · 搜索结果':''}`;
 }
-$('session-choice').onchange=()=>openRepo(active.id,$('session-choice').value).catch(e=>toast(e.message));
-$('session-search').oninput=async()=>{
-  const version=++sessionSearchVersion; const repo=active.id;
-  try{const items=await api(`/api/sessions?repo=${encodeURIComponent(repo)}&q=${encodeURIComponent($('session-search').value)}`);if(version===sessionSearchVersion&&active.id===repo)renderSessions(items);}catch(error){toast(error.message);}
-};
+async function refreshSessionList() {
+  const version=++sessionSearchVersion, repo=active?.id;if(!repo)return;
+  const items=await api(`/api/sessions?repo=${encodeURIComponent(repo)}&q=${encodeURIComponent($('session-search').value)}`);
+  if(version===sessionSearchVersion && active?.id===repo){sessions=items;const selected=items.find(s=>s.id===currentSession?.id);if(selected)currentSession=selected;renderSessions(items);}
+}
+$('session-search').oninput=()=>refreshSessionList().catch(e=>toast(e.message));
 $('new-session').onclick=async()=>{
+  if(busy||!active)return;const repo=active.id;setBusy(true);
+  try{const session=await api('/api/sessions/create',{repo,title:'新会话'});setBusy(false);await openRepo(repo,session.id);}catch(error){toast(error.message);}finally{setBusy(false);}
+};
+async function sessionAction(action,session) {
   if(busy||!active)return;
-  try{const session=await api('/api/sessions/create',{repo:active.id,title:'新会话'});await openRepo(active.id,session.id);}catch(error){toast(error.message);}
-};
-$('rename-session').onclick=async()=>{
-  if(busy||!currentSession)return;const title=prompt('会话名称（最多 80 字）',currentSession.title);if(title===null)return;
-  try{await api('/api/sessions/rename',{repo:active.id,sessionId:currentSession.id,title});await openRepo(active.id,currentSession.id);}catch(error){toast(error.message);}
-};
-$('delete-session').onclick=async()=>{
-  if(busy||!currentSession||!confirm(`删除「${currentSession.title}」及其全部对话？此操作无法撤销。`))return;
-  try{await api('/api/sessions/delete',{repo:active.id,sessionId:currentSession.id});await openRepo(active.id);}catch(error){toast(error.message);}
-};
+  const repo=active.id, body={repo,sessionId:session.id};
+  if(action==='delete'&&!confirm(`删除「${session.title}」及其全部对话？此操作无法撤销，已保存的学习档案会保留。`))return;
+  if(action==='rename'){const title=prompt('会话名称（最多 80 字）',session.title);if(title===null)return;body.title=title;}
+  if(action==='pin')body.pinned=!session.pinned;
+  setBusy(true); ++sessionSearchVersion;
+  try{
+    await api(`/api/sessions/${action}`,body);
+    if(action==='delete'&&currentSession?.id===session.id){setBusy(false);await openRepo(repo);}
+    else {await refreshSessionList();sessionUI.focusMenu(session.id);}
+  }catch(error){toast(error.message);}finally{setBusy(false);sessionUI.focusMenu(session.id);}
+}
 $('regenerate-button').onclick=()=>{const latest=history.at(-1);if(latest)submitQuestion(latest.question,latest.id);};
 function showView(view) {
   ['welcome', 'project', 'discover', 'learning'].forEach(id => $(id).classList.toggle('hidden', id !== view));
@@ -216,6 +224,7 @@ async function submitQuestion(question, regenerateId) {
     if (!chatController.signal.aborted) toast(error.message);
   } finally {
     chatController = null; setBusy(false); $('send-button').textContent = '发送 ↑';
+    refreshSessionList().catch(e=>toast(e.message));
   }
 }
 $('stop-button').onclick = () => chatController?.abort();

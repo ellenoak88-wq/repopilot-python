@@ -40,6 +40,8 @@ class Store:
         """)
         if "session_id" not in [r["name"] for r in self.db.execute("PRAGMA table_info(chats)")]:
             self.db.execute("ALTER TABLE chats ADD COLUMN session_id TEXT")
+        if "pinned" not in [r["name"] for r in self.db.execute("PRAGMA table_info(sessions)")]:
+            self.db.execute("ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
         with self.db:
             for row in self.db.execute("SELECT id FROM repositories").fetchall():
                 session = self.default_session(row["id"])
@@ -61,8 +63,8 @@ class Store:
 
     def _session(self, repo, title="新会话"):
         stamp = now()
-        item = dict(id=str(uuid.uuid4()), repo=repo, title=title, created_at=stamp, updated_at=stamp)
-        self.db.execute("INSERT INTO sessions VALUES (?,?,?,?,?)", tuple(item.values()))
+        item = dict(id=str(uuid.uuid4()), repo=repo, title=title, created_at=stamp, updated_at=stamp, pinned=0)
+        self.db.execute("INSERT INTO sessions(id,repo,title,created_at,updated_at,pinned) VALUES (?,?,?,?,?,?)", tuple(item.values()))
         return item
 
     def create_session(self, repo, title="新会话"):
@@ -70,7 +72,7 @@ class Store:
             return self._session(repo, title)
 
     def default_session(self, repo):
-        return self._one("SELECT * FROM sessions WHERE repo=? ORDER BY updated_at DESC,rowid DESC LIMIT 1", (repo,)) or self._session(repo, "默认会话")
+        return self._one("SELECT * FROM sessions WHERE repo=? ORDER BY pinned DESC,updated_at DESC,rowid DESC LIMIT 1", (repo,)) or self._session(repo, "默认会话")
 
     def get_session(self, repo, session_id):
         return self._one("SELECT * FROM sessions WHERE repo=? AND id=?", (repo, session_id))
@@ -124,12 +126,20 @@ class Store:
             (SELECT 1 FROM chats c WHERE c.session_id=s.id AND
             (instr(lower(json_extract(c.payload,'$.question')),lower(?))>0 OR
              instr(lower(json_extract(c.payload,'$.answer')),lower(?))>0)))
-            ORDER BY s.updated_at DESC,s.rowid DESC"""
+            ORDER BY s.pinned DESC,s.updated_at DESC,s.rowid DESC"""
         return [dict(r) for r in self.db.execute(sql, (repo, query, query, query))]
 
     def rename_session(self, repo, session_id, title):
         with self.db:
             self.db.execute("UPDATE sessions SET title=?,updated_at=? WHERE repo=? AND id=?", (title, now(), repo, session_id))
+
+    def pin_session(self, repo, session_id, pinned):
+        if type(pinned) is not bool:
+            raise ValueError("置顶状态必须为布尔值。")
+        if not self.get_session(repo, session_id):
+            raise ValueError("会话不存在或不属于当前仓库。")
+        with self.db:
+            self.db.execute("UPDATE sessions SET pinned=? WHERE repo=? AND id=?", (int(pinned),repo,session_id))
 
     def delete_session(self, repo, session_id):
         with self.db:

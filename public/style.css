@@ -170,3 +170,13 @@
 .section-manager-row>strong,.section-manager-row>span{flex:1;min-width:150px;overflow-wrap:anywhere}.section-manager-row>select{max-width:260px}
 #section-status{color:var(--green)}
 @media(max-width:800px){.section-tools{flex-basis:100%;margin:8px 0 0}.sidebar .repo-list{display:block;width:100%;max-height:210px;flex-basis:100%;max-width:none}.repo-group{margin:0}.sections-dialog{padding:18px}.section-manager-row select{width:100%;max-width:none}}
+
+.session-list{flex-basis:100%;max-height:280px;overflow:auto;min-width:0;width:100%}
+.session-row{display:grid;grid-template-columns:minmax(0,1fr) 36px;align-items:start;border-radius:6px;margin:4px 0;border:1px solid transparent}
+.session-row.selected{background:var(--soft);border-color:#d5e7de}
+.session-select{display:flex;flex-direction:column;align-items:flex-start;min-width:0;text-align:left;padding:9px 10px;background:transparent;border:0;color:#426253;border-radius:5px}
+.session-row-title{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.session-row .session-select small{font-size:10px;margin:2px 0 0;color:var(--muted)}
+.session-menu-trigger{font-size:22px;line-height:24px;margin:7px 3px;padding:0;border:0;background:transparent;color:#547062;border-radius:4px;min-height:30px}
+.session-menu{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--line);padding:8px;background:#fff}
+.session-menu[hidden]{display:none}.session-menu button{background:white;border:1px solid var(--line);border-radius:5px;padding:6px 10px;font-size:11px;color:#426253}.session-menu .danger{color:#a53c32}
