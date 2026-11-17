@@ -1,3 +1,4 @@
+import { createSidebar } from './sidebar.js';
 import { createSessionList } from './session-list.js';
 import { createSections } from './sections.js';
 import { createLearning } from './learning.js';
@@ -20,6 +21,7 @@ const retrieval = createRetrieval({setBusy, toast});
 const discovery = createDiscovery(url => importRepository(url, true));
 const learning = createLearning({api, toast});
 const sectionsUI = createSections({api,toast,onChange:refreshRepos});
+const sidebarUI = createSidebar({root:$('repo-list'),onOpen:id=>openRepo(id).catch(e=>toast(e.message)),onRepoAction:repoAction,onSectionAction:sectionAction,onMove:moveRepo});
 const sessionUI = createSessionList({root:$('session-list'),onSelect:id=>openRepo(active.id,id).catch(e=>toast(e.message)),onAction:sessionAction});
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 async function api(path, body) {
@@ -32,10 +34,11 @@ function setBusy(value) {
   discovery.setBusy(value);
   learning.setBusy(value);
   sectionsUI.setBusy(value);
+  sidebarUI.setBusy(value);
   $('use-learning').disabled=value;
   retrieval.setBusy(value);
   for (const node of document.querySelectorAll('button, #repo-url, #mode, #model-choice, #custom-model, #effort-choice')) {
-    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel, #discover, #retrieval-panel, #learning, .learning-dialog, .sections-dialog') || node.matches('.citation, .file-item')) continue;
+    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel, #discover, #retrieval-panel, #learning, .learning-dialog, .sections-dialog, #repo-list, .sidebar-menu') || node.matches('.citation, .file-item')) continue;
     node.disabled = value;
   }
   $('stop-button').disabled = !chatController;
@@ -47,19 +50,35 @@ function setBusy(value) {
 }
 async function refreshRepos() {
   const [repos, sections] = await Promise.all([api('/api/repos'),api('/api/sections')]);
-  if(active) active={...active,sectionId:repos.find(r=>r.id===active.id)?.sectionId || null};
+  if(active) {const updated=repos.find(r=>r.id===active.id);if(updated)active={...active,sectionId:updated.sectionId,pinned:updated.pinned};}
   discovery.setImported(repos); learning.setRepositories(repos); learning.setSections(sections); sectionsUI.setData(sections,repos,active);
   $('repo-count').textContent = repos.length;
-  const expanded=new Map([...$('repo-list').querySelectorAll('.repo-group')].map(n=>[n.dataset.section,n.open]));
-  $('repo-list').replaceChildren(...[...sections,{id:null,name:'未分区'}].map(section=>{
-    const group=el('details','repo-group');group.dataset.section=section.id||'';group.open=expanded.get(group.dataset.section)??true;
-    const members=repos.filter(r=>r.sectionId===section.id);group.append(el('summary','',`${section.name} · ${members.length}`));
-    for(const repo of members){
-      const button=el('button',`repo-item${active?.id===repo.id?' selected':''}`,`⑂  ${repo.id}`);button.type='button';button.title=repo.id;button.disabled=busy;
-      button.onclick=()=>openRepo(repo.id).catch(e=>toast(e.message));group.append(button);
-    }
-    if(!members.length)group.append(el('p','','暂无项目'));return group;
-  }));
+  sidebarUI.render(sections,repos,active);
+}
+async function sidebarMutation(path,body,success,after) {
+  if(busy)return;setBusy(true);
+  try{await api(path,body);if(after)after();await refreshRepos();toast(success);}
+  catch(e){toast(e.message);await refreshRepos().catch(()=>{});}
+  finally{setBusy(false);}
+}
+function moveRepo(repo,sectionId){
+  return sidebarMutation('/api/sections/assign',{repo:repo.id,sectionId,expectedSectionId:repo.sectionId},'项目已移动，分区共享范围已更新。');
+}
+function repoAction(action,repo){
+  if(busy)return;
+  if(action==='move'){sectionsUI.open(repo.id);return;}
+  if(action==='pin'){sidebarMutation('/api/repos/pin',{repo:repo.id,pinned:!repo.pinned},repo.pinned?'已取消项目置顶。':'项目已在分区内置顶。');return;}
+  if(action==='delete'&&confirm(`删除本地项目「${repo.id}」？将删除本地源码索引、该项目的全部会话、上手清单和向量索引。已保存的学习档案会保留并标为来源过期，GitHub 仓库不受影响。`)){
+    sidebarMutation('/api/repos/delete',{repo:repo.id,indexVersion:repo.indexVersion},'本地项目已删除，学习档案已保留。',()=>{
+      if(active?.id===repo.id){++repoOpenVersion;++sessionSearchVersion;active=null;currentSession=null;sessions=[];history=[];files=[];$('question').value='';showView('welcome');$('breadcrumb').textContent='仓库探索';}
+    });
+  }
+}
+function sectionAction(action,section){
+  if(busy)return;
+  if(action==='create'||action==='manage'){sectionsUI.open();return;}
+  if(action==='rename'){const name=prompt('分区名称（最多 60 字）',section.name);if(name!==null)sidebarMutation('/api/sections/rename',{id:section.id,revision:section.revision,name},'分区已重命名。');}
+  if(action==='delete'&&confirm(`删除分区「${section.name}」？仅可删除没有项目和共享档案的空分区。`))sidebarMutation('/api/sections/delete',{id:section.id,revision:section.revision},'空分区已删除。');
 }
 function historical(item) { return !!item?.indexVersion && item.indexVersion !== active?.indexVersion; }
 function renderSources(sources, old = false) {

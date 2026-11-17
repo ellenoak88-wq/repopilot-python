@@ -40,8 +40,14 @@ export function createSections({api,toast,onChange}) {
     options($('project-section'),current?.sectionId);controls();
   }
   $('section-create-form').onsubmit=async e=>{e.preventDefault();await mutate('create',{name:$('section-name').value});};
-  $('manage-sections').onclick=async()=>{if(busy||pending)return;await onChange().catch(e=>toast(e.message));$('section-status').textContent='';dialog.showModal();$('section-name').focus();};
+  async function open(repoId){
+    if(busy||pending)return;
+    await onChange().catch(e=>toast(e.message));$('section-status').textContent='';if(!dialog.open)dialog.showModal();
+    const select=[...$('section-repos').querySelectorAll('select')].find(s=>s.getAttribute('aria-label')===`${repoId} 所属分区`);
+    if(select){select.scrollIntoView({block:'center'});select.focus();}else $('section-name').focus();
+  }
+  $('manage-sections').onclick=()=>open();
   $('sections-close').onclick=()=>dialog.close();dialog.addEventListener('cancel',e=>{if(pending)e.preventDefault();});
   $('project-section').onchange=()=>{if(current)mutate('assign',{repo:current.id,sectionId:$('project-section').value||null,expectedSectionId:current.sectionId});};
-  return {setData(items,projects,active){sections=items;repos=projects;current=active;render();},setBusy(value){busy=value;controls();}};
+  return {open,setData(items,projects,active){sections=items;repos=projects;current=active;render();},setBusy(value){busy=value;controls();}};
 }

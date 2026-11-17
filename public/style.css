@@ -180,3 +180,19 @@
 .session-menu-trigger{font-size:22px;line-height:24px;margin:7px 3px;padding:0;border:0;background:transparent;color:#547062;border-radius:4px;min-height:30px}
 .session-menu{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--line);padding:8px;background:#fff}
 .session-menu[hidden]{display:none}.session-menu button{background:white;border:1px solid var(--line);border-radius:5px;padding:6px 10px;font-size:11px;color:#426253}.session-menu .danger{color:#a53c32}
+
+/* Sidebar actions and repository drop targets */
+.repo-group-heading{display:flex;align-items:center;gap:3px;min-width:0;margin:7px 0}
+.repo-group-toggle{flex:1;min-width:0;background:none;border:0;padding:6px 3px;text-align:left;font-size:12px;color:#496558;overflow-wrap:anywhere}
+.sidebar-menu-trigger{flex:none;width:30px;min-height:32px;background:transparent;border:0;color:#6c8278;font-size:22px;line-height:1;border-radius:5px;padding:0}
+.sidebar-menu-trigger:hover,.sidebar-menu-trigger[aria-expanded=true]{background:#e8f1ed;color:var(--green)}
+.repo-row{display:flex;align-items:center;gap:2px;border-radius:8px;margin:3px 0;min-width:0}
+.repo-row.selected{background:#f1f5f4}.repo-row.selected>.repo-item{color:var(--green)}
+.repo-row>.repo-item{flex:1;min-width:0;cursor:grab;width:auto;padding-right:0}.repo-row>.repo-item:active{cursor:grabbing}
+.repo-group{border:1px solid transparent;border-radius:8px;padding:2px;transition:background .15s,border-color .15s}
+.repo-group.drop-target{background:#e4f4ec;border-color:#36a58b;box-shadow:inset 0 0 0 1px #36a58b}
+.repo-row.dragging{opacity:.45}.repo-drop-hint{font-size:10px;color:var(--muted);margin:6px 9px 12px}
+.repo-group-items[hidden]{display:none}
+.sidebar-menu{position:fixed;z-index:30;width:190px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;background:white;border:1px solid #d9e3dd;border-radius:8px;padding:5px;box-shadow:0 8px 28px #183b2d26}
+.sidebar-menu[hidden]{display:none}.sidebar-menu button{display:block;width:100%;border:0;background:white;color:#365c48;text-align:left;padding:9px 10px;border-radius:4px;font-size:12px}.sidebar-menu button:hover,.sidebar-menu button:focus{background:#edf5f0}.sidebar-menu .danger{color:#aa3c31}
+@media(max-width:800px){.repo-row>.repo-item{padding:7px 8px}.sidebar-menu-trigger{min-width:36px;min-height:36px}.repo-group-toggle{font-size:12px}}
