@@ -15,6 +15,7 @@ from .checklist import ChecklistConflict, ChecklistService
 from .discovery import DiscoveryService, DiscoveryUnavailable
 from .embeddings import make_embedder
 from .hybrid import HybridRetrieval
+from .learning import LearningService, LearningConflict
 from .explorer import search_files, validate_search
 from .github import import_github, import_limits, parse_repo
 from .models import MODEL_OPTIONS, discover_models, model_config, select_model
@@ -22,7 +23,7 @@ from .store import Store, now
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = json.loads((Path(__file__).parent / "demo.json").read_text(encoding="utf-8"))
-ASSETS = {"/": "index.html", **{f"/{name}": name for name in ("app.js", "style.css", "render.js", "sse.js", "reader.js", "model-order.js", "explorer.js", "checklist.js", "discovery.js", "retrieval.js", "vendor/marked.js", "vendor/purify.js")}}
+ASSETS = {"/": "index.html", **{f"/{name}": name for name in ("app.js", "style.css", "render.js", "sse.js", "reader.js", "model-order.js", "explorer.js", "checklist.js", "discovery.js", "retrieval.js", "learning.js", "vendor/marked.js", "vendor/purify.js")}}
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
     "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -91,6 +92,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
     owned_store = store is None
     store = store or Store(Path(os.getenv("DATA_DIR", str(ROOT / "data"))) / "repopilot.db")
     checklists = ChecklistService(store)
+    learning = LearningService(store)
     discovery = DiscoveryService(store, transport=discovery_transport)
     hybrid = HybridRetrieval(store, embedder or make_embedder(os.getenv("DATA_DIR", str(ROOT / "data"))))
     jobs, tasks = {}, set()
@@ -122,7 +124,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
         raw = bytearray()
         async for part in request.stream():
             raw.extend(part)
-            if len(raw) > 20000:
+            if len(raw) > (40000 if request.url.path.startswith("/api/learning/") else 20000):
                 raise ApiError(413, "请求过大。")
         try:
             body = json.loads(raw or b"{}")
@@ -185,17 +187,22 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
         retrieval_mode = body.get("retrieval", "hybrid")
         if retrieval_mode not in ("hybrid", "bm25"):
             raise ApiError(400, "检索方式无效。")
+        if "useLearning" in body and type(body["useLearning"]) is not bool:
+            raise ApiError(400, "学习档案开关必须为布尔值。")
+        use_learning = body.get("useLearning", True)
+        context = learning.filter_history(repo, context, use_learning)
+        memories = learning.recall(repo, question) if use_learning else []
         config = select_model(body.get("model"), body.get("effort"))
         indexed_chunks = store.chunks(repo["id"])
 
         async def retrieve(query, limit):
             return await hybrid.retrieve(repo, indexed_chunks, query, limit, mode=retrieval_mode)
         kwargs = dict(repo=repo, files=store.files(repo["id"]), chunks=indexed_chunks, question=question, retriever=retrieve,
-                      history=context, force_extractive=body.get("mode") == "extractive", config=config)
+                      history=context, memories=memories, force_extractive=body.get("mode") == "extractive", config=config)
         state["busy"] = True
 
         def save(result):
-            return store.add_chat(repo["id"], {"question": question, **result, "createdAt": now()}, session["id"], replace_id)
+            return store.add_chat(repo["id"], {"question": question, **result, "memoriesUsed": memories, "createdAt": now()}, session["id"], replace_id)
 
         if not streaming:
             task = asyncio.create_task(agent(**kwargs))
@@ -273,6 +280,18 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                         raise ApiError(400, "刷新参数无效。")
                     return await discovery.get(source=q.get("source", "trending"), language=q.get("language", ""),
                                                since=q.get("since", "daily"), topic=q.get("topic", ""), refresh=q.get("refresh") == "1")
+                if path == "/api/learning/export":
+                    return Response(learning.export(), media_type="text/markdown; charset=utf-8",
+                                    headers={"Content-Disposition": 'attachment; filename="learning-history.md"'})
+                if path == "/api/learning/detail":
+                    return learning.get(q.get("id"))
+                if path == "/api/learning":
+                    try:
+                        offset, limit = int(q.get("offset", "0")), int(q.get("limit", "50"))
+                    except ValueError as exc:
+                        raise ApiError(400, "分页参数无效。") from exc
+                    return learning.list(query=q.get("q", ""), repo=q.get("repo", ""), status=q.get("status", ""),
+                                         scope=q.get("scope", ""), kind=q.get("kind", ""), offset=offset, limit=limit)
                 if path == "/api/repos":
                     return store.list()
                 if path == "/api/retrieval/status":
@@ -321,6 +340,15 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return store.sessions(repo["id"], q.get("q", "")[:200])
             else:
                 body = await body_json(request)
+                if path in ("/api/learning/create", "/api/learning/update", "/api/learning/delete", "/api/learning/from-chat"):
+                    idle()
+                    if path.endswith("/from-chat"):
+                        return learning.from_chat(get_repo(body.get("repo")), body.get("chatId"))
+                    if path.endswith("/create"):
+                        return JSONResponse(learning.create(body), status_code=201)
+                    if path.endswith("/delete"):
+                        return learning.delete(body)
+                    return learning.update(body)
                 if path == "/api/retrieval/build":
                     idle()
                     repo = get_repo(body.get("repo"))
@@ -390,7 +418,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             return JSONResponse({"error": e.message}, status_code=e.status)
         except DiscoveryUnavailable as e:
             return JSONResponse({"error": str(e)}, status_code=503)
-        except ChecklistConflict as e:
+        except (ChecklistConflict, LearningConflict) as e:
             return JSONResponse({"error": str(e)}, status_code=409)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)

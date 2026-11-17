@@ -1,3 +1,4 @@
+import { createLearning } from './learning.js';
 import { createRetrieval } from './retrieval.js';
 import { createReader } from './reader.js';
 import { createExplorer } from './explorer.js';
@@ -15,6 +16,7 @@ const explorer = createExplorer(openFile);
 const checklist = createChecklist(openFile);
 const retrieval = createRetrieval({setBusy, toast});
 const discovery = createDiscovery(url => importRepository(url, true));
+const learning = createLearning({api, toast});
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -24,9 +26,11 @@ function toast(message) { $('toast').textContent = message; $('toast').classList
 function setBusy(value) {
   busy = value;
   discovery.setBusy(value);
+  learning.setBusy(value);
+  $('use-learning').disabled=value;
   retrieval.setBusy(value);
   for (const node of document.querySelectorAll('button, #repo-url, #mode, #model-choice, #custom-model, #effort-choice')) {
-    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel, #discover, #retrieval-panel') || node.matches('.citation, .file-item')) continue;
+    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel, #discover, #retrieval-panel, #learning, .learning-dialog') || node.matches('.citation, .file-item')) continue;
     node.disabled = value;
   }
   $('stop-button').disabled = !chatController;
@@ -37,7 +41,7 @@ function setBusy(value) {
   if (!value) updateEfforts(false);
 }
 async function refreshRepos() {
-  const repos = await api('/api/repos'); discovery.setImported(repos); $('repo-count').textContent = repos.length;
+  const repos = await api('/api/repos'); discovery.setImported(repos); learning.setRepositories(repos); $('repo-count').textContent = repos.length;
   $('repo-list').replaceChildren(...repos.map(repo => {
     const button = el('button', `repo-item${active?.id === repo.id ? ' selected' : ''}`, `⑂  ${repo.id}`);
     button.title = repo.id; button.disabled = busy; button.onclick = () => openRepo(repo.id).catch(e => toast(e.message)); return button;
@@ -72,7 +76,14 @@ function addMessage(item) {
   const content = el('div', 'message-content'); renderAnswer(content, item.answer, item.sources, item.mode === 'agent', historical(item));
   const trace = el('details', 'trace'); trace.append(el('summary', '', `${item.trace.length} 个执行步骤 · 查看工具记录`));
   const steps = el('ol'); item.trace.forEach(s => steps.append(el('li', '', `${s.label} — ${s.detail}`))); trace.append(steps);
-  assistant.append(label, content, trace); $('messages').append(user, assistant);
+  assistant.append(label, content, trace);
+  for (const memory of item.memoriesUsed || []) {
+    const details=el('details','learning-memory');details.append(el('summary','',`[${memory.citation}] 学习经验 · ${memory.title} · 修订 ${memory.revision}`));
+    details.append(el('p','muted',`${memory.repo || '通用经验'} · ${memory.scope==='global'?'跨仓库通用':'项目专属'} · 保存的是本次引用快照`),el('p','',`适用条件：${memory.applicability}`),el('pre','',memory.content));
+    const edit=el('button','secondary','查看档案当前版本');edit.type='button';edit.onclick=()=>learning.open(memory.id);details.append(edit);assistant.append(details);
+  }
+  if(item.id) { const save=el('button','secondary save-learning','存为学习档案');save.type='button';save.onclick=()=>learning.saveChat(active.id,item.id);assistant.append(save); }
+  $('messages').append(user, assistant);
   return { assistant, content, label, steps, trace };
 }
 async function openRepo(id, sessionId) {
@@ -124,11 +135,13 @@ $('delete-session').onclick=async()=>{
 };
 $('regenerate-button').onclick=()=>{const latest=history.at(-1);if(latest)submitQuestion(latest.question,latest.id);};
 function showView(view) {
-  ['welcome', 'project', 'discover'].forEach(id => $(id).classList.toggle('hidden', id !== view));
-  $('new-repo').classList.toggle('active', view !== 'discover');
+  ['welcome', 'project', 'discover', 'learning'].forEach(id => $(id).classList.toggle('hidden', id !== view));
+  $('new-repo').classList.toggle('active', ['welcome','project'].includes(view));
   $('discover-nav').classList.toggle('active', view === 'discover');
+  $('learning-nav').classList.toggle('active', view === 'learning');
 }
 $('new-repo').onclick = () => { if (busy) return; showView('welcome'); $('breadcrumb').textContent = '仓库探索'; $('repo-url').focus(); };
+$('learning-nav').onclick=()=>{if(busy)return;showView('learning');$('breadcrumb').textContent='学习档案';learning.show();};
 $('discover-nav').onclick = () => { if (busy) return; showView('discover'); $('breadcrumb').textContent = '发现项目'; discovery.show(); };
 $('demo-button').onclick = async () => {
   if (busy) return; setBusy(true);
@@ -161,7 +174,7 @@ async function submitQuestion(question, regenerateId) {
   let completed = false; let frame;
   const paint = () => { frame = null; renderAnswer(view.content, item.answer, item.sources, item.mode === 'agent'); $('messages').scrollTop = $('messages').scrollHeight; };
   try {
-    const response = await fetch('/api/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: active.id, sessionId:currentSession.id, regenerateId, question, mode: item.mode, model: item.model, effort: item.effort, retrieval: $('retrieval-mode').value }), signal: chatController.signal });
+    const response = await fetch('/api/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: active.id, sessionId:currentSession.id, regenerateId, question, mode: item.mode, model: item.model, effort: item.effort, retrieval: $('retrieval-mode').value, useLearning:$('use-learning').checked }), signal: chatController.signal });
     if (!response.ok) { const error = await response.json(); throw Error(error.error || '请求失败'); }
     for await (const message of readSSE(response.body)) {
       const event = JSON.parse(message.data);
@@ -179,7 +192,7 @@ async function submitQuestion(question, regenerateId) {
         if(regenerateId!==undefined)history=history.map(h=>h.id===regenerateId?event.result:h);else history.push(event.result);
         cancelAnimationFrame(frame); paint(); renderSources(item.sources); $('question').value = '';
         view.trace.querySelector('summary').textContent = `${item.trace.length} 个执行步骤 · 已完成`;
-        if(regenerateId!==undefined){$('messages').replaceChildren();history.forEach(addMessage);}
+        $('messages').replaceChildren();history.forEach(addMessage);$('messages').scrollTop=$('messages').scrollHeight;
       }
     }
     if (!completed) throw Error('连接提前结束，部分回答未保存。');
