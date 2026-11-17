@@ -72,7 +72,7 @@ class LearningService:
             raise ValueError('最多 8 个标签，每个标签 1–30 字。')
         result['tags'] = list(dict.fromkeys(t.strip() for t in tags))
         repo = body.get('repo', previous.get('repo') if previous else None) or None
-        if repo is not None and (not isinstance(repo,str) or not self.store.get(repo)):
+        if repo is not None and (not isinstance(repo,str) or (not self.store.get(repo) and not (previous and repo == previous['repo']))):
             raise ValueError('关联仓库不存在。')
         if previous and repo != previous['repo']:
             raise ValueError('已有档案的来源仓库不可更改，请新建档案。')
@@ -132,7 +132,7 @@ class LearningService:
                 if not item['repo'] or not item['currentIndexVersion'] or body.get('currentIndexVersion') != item['currentIndexVersion']:
                     raise LearningConflict('仓库索引已变化，请重新打开档案并核对当前源码。')
                 reviewed = item['currentIndexVersion']
-            if fields['status'] == 'verified' and item['stale'] and reviewed != item['currentIndexVersion']:
+            if fields['status'] == 'verified' and item['stale'] and (not item['currentIndexVersion'] or reviewed != item['currentIndexVersion']):
                 raise LearningConflict('来源索引已变化，请核对当前源码并勾选复核后再标记为已验证，或保存为待确认。')
             updated = {k:v for k,v in item.items() if k not in ('stale','currentIndexVersion','sectionName')}
             updated.update(fields, revision=item['revision']+1,updatedAt=now(),reviewedIndexVersion=reviewed)

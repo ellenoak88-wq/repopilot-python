@@ -297,7 +297,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                 if path == "/api/sections":
                     return sections.list()
                 if path == "/api/repos":
-                    return [sections.annotate(r) for r in store.list()]
+                    return sections.repositories()
                 if path == "/api/retrieval/status":
                     return hybrid.status(get_repo(q.get("repo")))
                 if path == "/api/checklist":
@@ -344,6 +344,12 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return store.sessions(repo["id"], q.get("q", "")[:200])
             else:
                 body = await body_json(request)
+                if path in ("/api/repos/pin", "/api/repos/delete"):
+                    idle()
+                    repo = get_repo(body.get("repo"))
+                    if path.endswith("/pin"):
+                        return sections.pin_repository(repo, body.get("pinned"))
+                    return sections.delete_repository(repo, body.get("indexVersion"))
                 if path in ("/api/sections/create", "/api/sections/rename", "/api/sections/delete", "/api/sections/assign"):
                     idle()
                     if path.endswith("/create"):

@@ -17,6 +17,7 @@ class SectionService:
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, name_key TEXT UNIQUE NOT NULL,
                 revision INTEGER NOT NULL, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS repo_sections (repo TEXT PRIMARY KEY, section_id TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS repo_preferences (repo TEXT PRIMARY KEY, pinned INTEGER NOT NULL DEFAULT 0);
             CREATE INDEX IF NOT EXISTS repo_sections_group_idx ON repo_sections(section_id);
         ''')
 
@@ -33,7 +34,31 @@ class SectionService:
         return row['section_id'] if row else None
 
     def annotate(self, repo):
-        return {**repo, 'sectionId': self.membership(repo['id'])}
+        preference = self.store._one('SELECT pinned FROM repo_preferences WHERE repo=?', (repo['id'],))
+        return {**repo, 'sectionId': self.membership(repo['id']), 'pinned': bool(preference and preference['pinned'])}
+
+    def repositories(self):
+        return sorted((self.annotate(r) for r in self.store.list()), key=lambda r: not r['pinned'])
+
+    def pin_repository(self, repo, pinned):
+        if type(pinned) is not bool:
+            raise ValueError('置顶状态必须为布尔值。')
+        with self.store.db:
+            self.store.db.execute('INSERT INTO repo_preferences VALUES (?,?) ON CONFLICT(repo) DO UPDATE SET pinned=excluded.pinned',
+                                  (repo['id'],int(pinned)))
+        return self.annotate(repo)
+
+    def delete_repository(self, repo, expected_version):
+        with self.store.db:
+            current = self.store.get(repo['id'])
+            if not current or expected_version != current['indexVersion']:
+                raise SectionConflict('项目索引已变化，请刷新后重新确认删除。')
+            # Personal learning records are independent; missing sources become stale.
+            for table in ('files','chats','sessions','repo_sections','repo_preferences','checklists','vector_indexes'):
+                if self.store._one("SELECT name FROM sqlite_master WHERE type='table' AND name=?",(table,)):
+                    self.store.db.execute(f'DELETE FROM {table} WHERE repo=?',(repo['id'],))
+            self.store.db.execute('DELETE FROM repositories WHERE id=?',(repo['id'],))
+        return {'deleted':repo['id']}
 
     def list(self):
         return [dict(r) for r in self.store.db.execute('''SELECT s.id,s.name,s.revision,s.created_at,

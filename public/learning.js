@@ -37,6 +37,7 @@ export function createLearning({api, toast}) {
       const select = $(id), value = select.value;
       const empty = node('option',label); empty.value='';
       select.replaceChildren(empty,...repos.map(r => { const o=node('option',r.id); o.value=r.id; return o; }));
+      if(id==='learning-repo' && editing?.repo && !repos.some(r=>r.id===editing.repo)){const missing=node('option',`${editing.repo}（已移除）`);missing.value=editing.repo;select.append(missing);}
       select.value = value;
     }
   }
