@@ -4,7 +4,7 @@ const statuses = {draft:'待确认', verified:'已验证', archived:'已归档'}
 const kinds = {experience:'实践经验', concept:'概念理解', procedure:'操作步骤'};
 
 export function createLearning({api, toast}) {
-  let records = [], repos = [], editing = null, busy = false, pending = false, page = 0, total = 0, epoch = 0;
+  let records = [], repos = [], sections = [], editing = null, busy = false, pending = false, page = 0, total = 0, epoch = 0;
   const dialog = node('dialog', undefined, 'learning-dialog');
   dialog.innerHTML = `<form id="learning-editor">
     <div class="learning-heading"><h2 id="learning-editor-title">学习档案</h2><button type="button" id="learning-close" class="secondary">关闭</button></div>
@@ -13,7 +13,8 @@ export function createLearning({api, toast}) {
     <label>内容<textarea id="learning-content" rows="8" maxlength="6000" required></textarea></label>
     <label>适用条件与限制<textarea id="learning-applicability" rows="2" maxlength="1000" placeholder="例如：适用于 FastAPI 项目的本地开发；部署前需重新核对依赖版本。"></textarea></label>
     <div class="learning-fields"><label>类别<select id="learning-kind"><option value="experience">实践经验</option><option value="concept">概念理解</option><option value="procedure">操作步骤</option></select></label>
-    <label>使用范围<select id="learning-scope"><option value="repo">项目专属</option><option value="global">跨仓库通用</option></select></label>
+    <label>使用范围<select id="learning-scope"><option value="repo">项目专属</option><option value="section">分区共享</option><option value="global">跨仓库通用</option></select></label>
+    <label id="learning-section-field">共享分区<select id="learning-section"></select></label>
     <label>来源仓库<select id="learning-repo"></select></label>
     <label>状态<select id="learning-status"><option value="draft">待确认</option><option value="verified">已验证</option><option value="archived">已归档</option></select></label></div>
     <label>标签（逗号分隔，最多 8 个）<input id="learning-tags" maxlength="247" placeholder="Python, 测试, 环境配置"></label>
@@ -39,10 +40,19 @@ export function createLearning({api, toast}) {
       select.value = value;
     }
   }
+  function sectionOptions() {
+    for (const [id,label] of [['learning-section','请选择分区'],['learning-filter-section','全部分区']]) {
+      const select=$(id),value=select.value,empty=node('option',label);empty.value='';
+      select.replaceChildren(empty,...sections.map(s=>{const o=node('option',s.name);o.value=s.id;return o;}));select.value=value;
+    }
+    sectionField();
+  }
+  function sectionField(){ const shared=$('learning-scope').value==='section';$('learning-section-field').classList.toggle('hidden',!shared);$('learning-section').required=shared; }
+  $('learning-scope').onchange=sectionField;
   async function refresh() {
     const version = ++epoch;
     $('learning-list-status').textContent = '正在读取学习档案…';
-    const q = new URLSearchParams({q:$('learning-query').value,repo:$('learning-filter-repo').value,status:$('learning-filter-status').value,scope:$('learning-filter-scope').value,kind:$('learning-filter-kind').value,offset:page*20,limit:20});
+    const q = new URLSearchParams({q:$('learning-query').value,repo:$('learning-filter-repo').value,status:$('learning-filter-status').value,scope:$('learning-filter-scope').value,kind:$('learning-filter-kind').value,sectionId:$('learning-filter-section').value,offset:page*20,limit:20});
     try {
       const data = await api(`/api/learning?${q}`);
       if (version !== epoch) return;
@@ -59,7 +69,7 @@ export function createLearning({api, toast}) {
     const heading=node('div',undefined,'learning-heading');
     const title=node('h2',item.title); const edit=node('button','编辑与核对','secondary');edit.type='button';edit.onclick=()=>open(item.id);
     heading.append(title,edit);
-    article.append(heading,node('p',`${statuses[item.status]}${item.stale ? ' · 来源已更新，需复核' : ''} · ${item.scope==='global' ? '跨仓库通用':'项目专属'} · ${kinds[item.kind]}`,'learning-meta'),
+    article.append(heading,node('p',`${statuses[item.status]}${item.stale ? ' · 来源已更新，需复核' : ''} · ${item.scope==='global' ? '跨仓库通用':item.scope==='section'?`分区共享 · ${item.sectionName}`:'项目专属'} · ${kinds[item.kind]}`,'learning-meta'),
       node('p',item.repo || '个人通用经验','muted'),node('p',item.content.slice(0,500)+(item.content.length>500?'…':''),'learning-preview'));
     if(item.applicability)article.append(node('p',`适用条件：${item.applicability}`));
     if(item.tags.length)article.append(node('p',item.tags.map(t=>`#${t}`).join(' '),'learning-meta'));
@@ -67,10 +77,11 @@ export function createLearning({api, toast}) {
     return article;
   }
   function editor(item=null) {
-    editing=item;repoOptions();
+    editing=item;repoOptions();sectionOptions();
     $('learning-editor-title').textContent=item ? '编辑学习档案':'新建学习档案';
     for(const key of ['title','content','applicability'])$(`learning-${key}`).value=item?.[key]||'';
     $('learning-kind').value=item?.kind||'experience';$('learning-scope').value=item?.scope||'global';
+    $('learning-section').value=item?.sectionId||'';sectionField();
     $('learning-status').value=item?.status||'draft';$('learning-repo').value=item?.repo||'';
     $('learning-tags').value=item?.tags.join(', ')||'';$('learning-review').checked=false;
     $('learning-review-field').classList.toggle('hidden',!item?.stale);
@@ -95,6 +106,7 @@ export function createLearning({api, toast}) {
   $('learning-editor').onsubmit=async event=>{
     event.preventDefault();if(busy||pending)return;pending=true;controls();
     const body={};for(const key of ['title','content','applicability','kind','scope','status','repo'])body[key]=$(`learning-${key}`).value;
+    body.sectionId=$('learning-scope').value==='section'?$('learning-section').value:null;
     body.tags=$('learning-tags').value.split(/[,，]/).map(t=>t.trim()).filter(Boolean);
     if(editing)Object.assign(body,{id:editing.id,revision:editing.revision,reviewCurrent:$('learning-review').checked,currentIndexVersion:editing.currentIndexVersion});
     try { await api(editing?'/api/learning/update':'/api/learning/create',body);dialog.close();toast('学习档案已保存。');await refresh(); }
@@ -110,12 +122,13 @@ export function createLearning({api, toast}) {
   dialog.addEventListener('cancel',e=>{if(pending)e.preventDefault();});
   $('learning-new').onclick=()=>{if(!busy&&!pending)editor();};
   $('learning-filter').onsubmit=e=>{e.preventDefault();page=0;refresh();};
-  for(const id of ['learning-filter-repo','learning-filter-status','learning-filter-scope','learning-filter-kind'])$(id).onchange=()=>{page=0;refresh();};
+  for(const id of ['learning-filter-repo','learning-filter-status','learning-filter-scope','learning-filter-kind','learning-filter-section'])$(id).onchange=()=>{page=0;refresh();};
   $('learning-prev').onclick=()=>{page--;refresh();};$('learning-next').onclick=()=>{page++;refresh();};
   return {
     show:refresh,
     setBusy(value){busy=value;controls();},
     setRepositories(items){repos=items;repoOptions();},
+    setSections(items){sections=items;sectionOptions();},
     open,
     async saveChat(repo,chatId){
       if(busy||pending)return;pending=true;controls();

@@ -16,6 +16,7 @@ from .discovery import DiscoveryService, DiscoveryUnavailable
 from .embeddings import make_embedder
 from .hybrid import HybridRetrieval
 from .learning import LearningService, LearningConflict
+from .sections import SectionConflict
 from .explorer import search_files, validate_search
 from .github import import_github, import_limits, parse_repo
 from .models import MODEL_OPTIONS, discover_models, model_config, select_model
@@ -23,7 +24,7 @@ from .store import Store, now
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = json.loads((Path(__file__).parent / "demo.json").read_text(encoding="utf-8"))
-ASSETS = {"/": "index.html", **{f"/{name}": name for name in ("app.js", "style.css", "render.js", "sse.js", "reader.js", "model-order.js", "explorer.js", "checklist.js", "discovery.js", "retrieval.js", "learning.js", "vendor/marked.js", "vendor/purify.js")}}
+ASSETS = {"/": "index.html", **{f"/{name}": name for name in ("app.js", "style.css", "render.js", "sse.js", "reader.js", "model-order.js", "explorer.js", "checklist.js", "discovery.js", "retrieval.js", "learning.js", "sections.js", "vendor/marked.js", "vendor/purify.js")}}
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
     "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -93,6 +94,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
     store = store or Store(Path(os.getenv("DATA_DIR", str(ROOT / "data"))) / "repopilot.db")
     checklists = ChecklistService(store)
     learning = LearningService(store)
+    sections = learning.sections
     discovery = DiscoveryService(store, transport=discovery_transport)
     hybrid = HybridRetrieval(store, embedder or make_embedder(os.getenv("DATA_DIR", str(ROOT / "data"))))
     jobs, tasks = {}, set()
@@ -138,7 +140,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
         repo = store.get(value) if isinstance(value, str) else None
         if not repo:
             raise ApiError(404, "请先导入或选择仓库。")
-        return repo
+        return sections.annotate(repo)
 
     async def import_job(value, job):
         try:
@@ -291,9 +293,11 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     except ValueError as exc:
                         raise ApiError(400, "分页参数无效。") from exc
                     return learning.list(query=q.get("q", ""), repo=q.get("repo", ""), status=q.get("status", ""),
-                                         scope=q.get("scope", ""), kind=q.get("kind", ""), offset=offset, limit=limit)
+                                         scope=q.get("scope", ""), kind=q.get("kind", ""), section_id=q.get("sectionId", ""), offset=offset, limit=limit)
+                if path == "/api/sections":
+                    return sections.list()
                 if path == "/api/repos":
-                    return store.list()
+                    return [sections.annotate(r) for r in store.list()]
                 if path == "/api/retrieval/status":
                     return hybrid.status(get_repo(q.get("repo")))
                 if path == "/api/checklist":
@@ -340,6 +344,15 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return store.sessions(repo["id"], q.get("q", "")[:200])
             else:
                 body = await body_json(request)
+                if path in ("/api/sections/create", "/api/sections/rename", "/api/sections/delete", "/api/sections/assign"):
+                    idle()
+                    if path.endswith("/create"):
+                        return JSONResponse(sections.create(body.get("name")), status_code=201)
+                    if path.endswith("/rename"):
+                        return sections.rename(body)
+                    if path.endswith("/delete"):
+                        return sections.delete(body)
+                    return sections.assign(body)
                 if path in ("/api/learning/create", "/api/learning/update", "/api/learning/delete", "/api/learning/from-chat"):
                     idle()
                     if path.endswith("/from-chat"):
@@ -418,7 +431,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             return JSONResponse({"error": e.message}, status_code=e.status)
         except DiscoveryUnavailable as e:
             return JSONResponse({"error": str(e)}, status_code=503)
-        except (ChecklistConflict, LearningConflict) as e:
+        except (ChecklistConflict, LearningConflict, SectionConflict) as e:
             return JSONResponse({"error": str(e)}, status_code=409)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)

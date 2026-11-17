@@ -1,3 +1,4 @@
+import { createSections } from './sections.js';
 import { createLearning } from './learning.js';
 import { createRetrieval } from './retrieval.js';
 import { createReader } from './reader.js';
@@ -17,6 +18,7 @@ const checklist = createChecklist(openFile);
 const retrieval = createRetrieval({setBusy, toast});
 const discovery = createDiscovery(url => importRepository(url, true));
 const learning = createLearning({api, toast});
+const sectionsUI = createSections({api,toast,onChange:refreshRepos});
 const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -27,10 +29,11 @@ function setBusy(value) {
   busy = value;
   discovery.setBusy(value);
   learning.setBusy(value);
+  sectionsUI.setBusy(value);
   $('use-learning').disabled=value;
   retrieval.setBusy(value);
   for (const node of document.querySelectorAll('button, #repo-url, #mode, #model-choice, #custom-model, #effort-choice')) {
-    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel, #discover, #retrieval-panel, #learning, .learning-dialog') || node.matches('.citation, .file-item')) continue;
+    if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel, #discover, #retrieval-panel, #learning, .learning-dialog, .sections-dialog') || node.matches('.citation, .file-item')) continue;
     node.disabled = value;
   }
   $('stop-button').disabled = !chatController;
@@ -41,10 +44,19 @@ function setBusy(value) {
   if (!value) updateEfforts(false);
 }
 async function refreshRepos() {
-  const repos = await api('/api/repos'); discovery.setImported(repos); learning.setRepositories(repos); $('repo-count').textContent = repos.length;
-  $('repo-list').replaceChildren(...repos.map(repo => {
-    const button = el('button', `repo-item${active?.id === repo.id ? ' selected' : ''}`, `⑂  ${repo.id}`);
-    button.title = repo.id; button.disabled = busy; button.onclick = () => openRepo(repo.id).catch(e => toast(e.message)); return button;
+  const [repos, sections] = await Promise.all([api('/api/repos'),api('/api/sections')]);
+  if(active) active={...active,sectionId:repos.find(r=>r.id===active.id)?.sectionId || null};
+  discovery.setImported(repos); learning.setRepositories(repos); learning.setSections(sections); sectionsUI.setData(sections,repos,active);
+  $('repo-count').textContent = repos.length;
+  const expanded=new Map([...$('repo-list').querySelectorAll('.repo-group')].map(n=>[n.dataset.section,n.open]));
+  $('repo-list').replaceChildren(...[...sections,{id:null,name:'未分区'}].map(section=>{
+    const group=el('details','repo-group');group.dataset.section=section.id||'';group.open=expanded.get(group.dataset.section)??true;
+    const members=repos.filter(r=>r.sectionId===section.id);group.append(el('summary','',`${section.name} · ${members.length}`));
+    for(const repo of members){
+      const button=el('button',`repo-item${active?.id===repo.id?' selected':''}`,`⑂  ${repo.id}`);button.type='button';button.title=repo.id;button.disabled=busy;
+      button.onclick=()=>openRepo(repo.id).catch(e=>toast(e.message));group.append(button);
+    }
+    if(!members.length)group.append(el('p','','暂无项目'));return group;
   }));
 }
 function historical(item) { return !!item?.indexVersion && item.indexVersion !== active?.indexVersion; }
@@ -79,7 +91,7 @@ function addMessage(item) {
   assistant.append(label, content, trace);
   for (const memory of item.memoriesUsed || []) {
     const details=el('details','learning-memory');details.append(el('summary','',`[${memory.citation}] 学习经验 · ${memory.title} · 修订 ${memory.revision}`));
-    details.append(el('p','muted',`${memory.repo || '通用经验'} · ${memory.scope==='global'?'跨仓库通用':'项目专属'} · 保存的是本次引用快照`),el('p','',`适用条件：${memory.applicability}`),el('pre','',memory.content));
+    details.append(el('p','muted',`${memory.repo || '通用经验'} · ${memory.scope==='global'?'跨仓库通用':memory.scope==='section'?`分区共享 · ${memory.sectionName||'分区'}`:'项目专属'} · 保存的是本次引用快照`),el('p','',`适用条件：${memory.applicability}`),el('pre','',memory.content));
     const edit=el('button','secondary','查看档案当前版本');edit.type='button';edit.onclick=()=>learning.open(memory.id);details.append(edit);assistant.append(details);
   }
   if(item.id) { const save=el('button','secondary save-learning','存为学习档案');save.type='button';save.onclick=()=>learning.saveChat(active.id,item.id);assistant.append(save); }
