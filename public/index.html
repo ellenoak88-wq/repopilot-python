@@ -17,7 +17,7 @@
       <div class="eyebrow"><span></span> YOUR NEXT OPEN-SOURCE CONTRIBUTION STARTS HERE</div>
       <h1>读懂一个项目，<br>从第一个问题开始<span class="accent">。</span></h1>
       <p class="subtitle">导入 GitHub 仓库，让代码与文档成为你的向导。<br>了解架构、找到入口，让每一步探索都有据可循。</p>
-      <form id="import-form" class="import-box"><label for="repo-url">公开 GitHub 仓库</label><div class="import-row"><span class="git-icon">⑂</span><input id="repo-url" placeholder="https://github.com/owner/repository" autocomplete="off" required aria-label="GitHub 仓库地址"><button id="import-button" class="primary" type="submit">导入并索引 <span>↗</span></button></div><div class="import-foot"><span>README · 源码 · 配置 · 文档</span><span>最多 100 个文本文件</span></div></form>
+      <form id="import-form" class="import-box"><label for="repo-url">公开 GitHub 仓库</label><div class="import-row"><span class="git-icon">⑂</span><input id="repo-url" placeholder="https://github.com/owner/repository" autocomplete="off" required aria-label="GitHub 仓库地址"><button id="import-button" class="primary" type="submit">导入并索引 <span>↗</span></button></div><div class="import-foot"><span>README · 源码 · 配置 · 文档</span><span id="import-limits">正在读取导入上限…</span></div></form>
       <div class="demo-row">先体验一下？<button id="demo-button" class="text-button">打开内置示例项目 <span>→</span></button><span class="muted">无需 API Key</span></div>
       <div class="feature-grid"><article><span class="feature-number">01 / DISCOVER</span><h3>找到代码入口</h3><p>梳理目录与关键文件，建立你的第一张项目地图。</p></article><article><span class="feature-number">02 / UNDERSTAND</span><h3>带着依据回答</h3><p>检索代码与文档，答案可追溯到具体文件和行号。</p></article><article><span class="feature-number">03 / CONTRIBUTE</span><h3>迈出贡献第一步</h3><p>生成阅读顺序与上手路线，把理解变成下一步行动。</p></article></div>
     </section>
@@ -36,7 +36,7 @@
       <div class="discover-meta"><p id="discover-status" role="status" aria-live="polite"></p><a id="discover-source-link" class="hidden" target="_blank" rel="noopener noreferrer">查看数据来源 ↗</a></div>
       <p id="discover-warning" class="discover-warning hidden" role="status"></p>
       <div id="discover-cards" class="discover-grid" aria-label="推荐项目"></div>
-      <p class="discover-note">数据缓存 1 小时，手动刷新间隔至少 1 分钟。导入最多索引 100 个文本文件；已导入项目会直接打开，保留对话与上手进度。</p>
+      <p class="discover-note">数据缓存 1 小时，手动刷新间隔至少 1 分钟。<span id="discover-import-limits">导入按配置限制文件数量和文本总量</span>；已导入项目会直接打开，保留对话与上手进度。</p>
     </section>
 
     <section id="project" class="project hidden">

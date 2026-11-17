@@ -124,3 +124,5 @@
 .retrieval-actions span { color:#78897d; font-size:11px; flex:1 1 260px; }
 .retrieval-channels { display:block; font-size:10px; color:#087c68; margin-top:8px; }
 @media(max-width:520px) { .retrieval-panel { padding:14px; } .retrieval-heading label { width:100%; } }
+
+.import-foot { flex-wrap:wrap; gap:5px 12px; }

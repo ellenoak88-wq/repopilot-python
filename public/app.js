@@ -80,7 +80,8 @@ async function openRepo(id, sessionId) {
   $('breadcrumb').textContent = active.id; $('project-name').textContent = active.name; $('project-description').textContent = active.description;
   $('project-stats').replaceChildren(...[`${active.language}`, `${active.fileCount} 个文件`, `${active.chunkCount} 个片段`, active.demo ? '内置演示数据' : `commit ${active.sha.slice(0, 7)}`].map(t => el('span', '', t)));
   $('coverage').classList.toggle('hidden', !active.partial);
-  $('coverage').textContent = `当前为部分索引：已收录 ${active.fileCount} 个文件（候选 ${active.totalEligible} 个，失败 ${active.failedFiles?.length || 0} 个）。未收录文件不会作为回答依据。`;
+  const skipped = [active.skippedFileLimit ? `数量限制跳过 ${active.skippedFileLimit} 个` : '', active.skippedByteLimit ? `总量限制跳过 ${active.skippedByteLimit} 个` : '', active.treeTruncated ? 'GitHub 目录树返回不完整' : ''].filter(Boolean).join('；');
+  $('coverage').textContent = `当前为部分索引：已收录 ${active.fileCount} 个文件（已发现候选 ${active.totalEligible} 个，失败 ${active.failedFiles?.length || 0} 个）。${skipped ? skipped + '。' : ''}未收录文件不会作为回答依据。`;
   explorer.setRepository(active, files);
   checklist.setRepository(active);
   retrieval.setRepository(active);
@@ -242,6 +243,12 @@ $('mode').onchange = () => updateEfforts(false);
 async function init() {
   try {
     const status = await api('/api/status'); modelConfigured = status.modelConfigured;
+    const limits = status.importLimits;
+    if (limits) {
+      const caption = `最多 ${limits.maxFiles.toLocaleString('zh-CN')} 个文本文件 · 总量 ${limits.maxTotalBytes / 1000000} MB`;
+      $('import-limits').textContent = caption;
+      $('discover-import-limits').textContent = `导入${caption}`;
+    }
     if (!status.modelConfigured) { $('mode').value = 'extractive'; $('mode').querySelector('[value="agent"]').disabled = true; }
     modelCatalog = status.models;
     let savedModel, savedEffort;
