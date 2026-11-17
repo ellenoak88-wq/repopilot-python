@@ -26,7 +26,7 @@ class LocalEmbedder:
             from huggingface_hub import snapshot_download
             from huggingface_hub.errors import LocalEntryNotFoundError
             try:
-                directory = snapshot_download(HF_REPO, revision=REVISION, cache_dir=self.cache_dir, local_files_only=True)
+                directory = snapshot_download(HF_REPO, revision=REVISION, cache_dir=self.cache_dir, local_files_only=True, allow_patterns=MODEL_FILES)
             except LocalEntryNotFoundError:
                 directory = None
             if not directory or not all((Path(directory) / name).is_file() for name in MODEL_FILES):

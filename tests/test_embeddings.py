@@ -31,6 +31,7 @@ def test_complete_cache_uses_pinned_offline_model(tmp_path, monkeypatch):
     def snapshot(repo, **kwargs):
         calls.append(kwargs)
         assert kwargs['local_files_only'] and kwargs['revision']==REVISION
+        assert kwargs['allow_patterns']==MODEL_FILES  # A partial model snapshot must use the same filter offline.
         return str(tmp_path)
     monkeypatch.setattr(huggingface_hub,'snapshot_download',snapshot)
     monkeypatch.setattr(fastembed,'TextEmbedding',lambda **kwargs:kwargs)
