@@ -35,3 +35,6 @@ docker compose down
 
 
 学习档案与会话共用 `/app/data/repopilot.db`，现有挂载目录即可持久化，无需新增服务。更新前可用 `python -m repopilot.migrate` 在线备份，首次启动自动补充历史版本字段；参见 [第六轮扩展说明](upgrade-06.md)。
+
+
+v0.8 首次启动会新增项目分区表，并为旧会话增加默认未置顶的字段。仓库、会话和学习档案沿用原 SQLite 文件；参见 [分区与会话菜单说明](upgrade-07.md)。

@@ -10,7 +10,8 @@
 - GPT-5.6、6、6.1 的 sol / astra / luna / terra 预设、思考强度、模型发现及手动输入。预设不保证账号或服务商支持，以实际接口返回为准。
 - 源码阅读器、引用行高亮、文件内搜索、行号跳转、复制。
 - 可折叠目录树、路径筛选与独立代码搜索，支持关键词和相关片段两种模式；无需调用模型。参见 [第二轮扩展说明](docs/upgrade-02.md)。
-- 多会话创建、搜索、重命名、删除；重新生成最后一条回答；导出当前会话。
+- 多会话创建与搜索；每条会话右侧菜单支持置顶、取消置顶、重命名和删除；重新生成最后一条回答与导出当前会话。
+- 项目分区：创建、重命名、项目归组与折叠显示；同区项目可共享已验证学习档案，支持项目专属、分区共享和跨仓库通用三种范围。参见 [第七轮扩展说明](docs/upgrade-07.md)。
 - 项目上手清单：根据仓库证据生成任务，支持完成进度、持久化备注、源码依据跳转与 Markdown 导出；索引变化时提示过期。参见 [第三轮扩展说明](docs/upgrade-03.md)。
 - GitHub 项目发现：Trending 趋势榜与热门 Star 排行，语言/周期/主题筛选、手动刷新、缓存回退、一键导入与已有仓库直接打开。参见 [第四轮扩展说明](docs/upgrade-04.md)。
 - 保留会话的仓库增量同步；历史回答绑定索引版本，旧引用保留原始摘录。
@@ -65,7 +66,7 @@ uv sync --frozen
 uv run pytest -q
 ```
 
-模块：`server.py` 提供 HTTP/SSE 接口；`agent.py` 编排 RAG 和工具调用；`stream.py` 解析模型流；`github.py` 导入仓库；`retrieval.py` 切片与 BM25；`store.py` 管理数据与会话；`models.py` 配置聊天模型；`embeddings.py` 运行本地向量模型；`hybrid.py` 管理向量索引和排名融合；`learning.py` 管理个人学习档案、版本复核与经验召回。全部位于 `repopilot/`。
+模块：`server.py` 提供 HTTP/SSE 接口；`agent.py` 编排 RAG 和工具调用；`stream.py` 解析模型流；`github.py` 导入仓库；`retrieval.py` 切片与 BM25；`store.py` 管理数据与会话；`models.py` 配置聊天模型；`embeddings.py` 运行本地向量模型；`hybrid.py` 管理向量索引和排名融合；`learning.py` 管理个人学习档案、版本复核与经验召回；`sections.py` 管理项目分区和归属。全部位于 `repopilot/`。
 
 升级依赖后执行 `uv lock`，再用 `uv export --frozen --no-dev --no-emit-project --output-file requirements.txt` 和 `uv export --frozen --no-emit-project --output-file requirements-dev.txt` 同步 pip/Docker 锁定文件。
 
