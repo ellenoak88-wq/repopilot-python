@@ -8,6 +8,34 @@ from urllib.parse import quote
 import httpx
 
 
+def import_limits():
+    def setting(name, default, minimum, maximum):
+        raw = os.getenv(name, str(default))
+        try:
+            value = int(raw)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"{name} 必须为整数。") from exc
+        if not minimum <= value <= maximum:
+            raise ValueError(f"{name} 必须在 {minimum}–{maximum} 之间。")
+        return value
+    return {"maxFiles": setting("REPO_MAX_FILES", 1000, 1, 5000),
+            "maxTotalBytes": setting("REPO_MAX_TOTAL_BYTES", 50_000_000, 1_000_000, 200_000_000),
+            "maxFileBytes": 80000}
+
+
+def select_files(candidates, limits):
+    selected, reserved, file_skipped, byte_skipped = [], 0, 0, 0
+    for file in candidates:
+        if len(selected) >= limits["maxFiles"]:
+            file_skipped += 1
+        elif reserved + file["size"] > limits["maxTotalBytes"]:
+            byte_skipped += 1
+        else:
+            selected.append(file)
+            reserved += file["size"]
+    return selected, file_skipped, byte_skipped
+
+
 def parse_repo(value):
     if not isinstance(value, str):
         raise ValueError("请输入 GitHub 仓库地址或 owner/repo。")
@@ -39,6 +67,7 @@ def priority(file):
 
 async def import_github(value, progress=lambda *_: None, *, transport=None):
     repo = parse_repo(value)
+    limits = import_limits()
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "RepoPilot-Python", "X-GitHub-Api-Version": "2022-11-28"}
     if os.environ.get("GITHUB_TOKEN"):
         headers["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
@@ -62,13 +91,15 @@ async def import_github(value, progress=lambda *_: None, *, transport=None):
         sha = commit["sha"]
         tree = await api(f"/git/trees/{sha}?recursive=1")
         candidates = sorted(filter(eligible, tree["tree"]), key=priority)
-        selected = candidates[:100]
+        selected, file_skipped, byte_skipped = select_files(candidates, limits)
         files, failed = [], []
         semaphore = asyncio.Semaphore(4)
         completed = 0
+        indexed_bytes = 0
+        actual_byte_skipped = []
 
         async def read_file(file):
-            nonlocal completed
+            nonlocal completed, indexed_bytes
             async with semaphore:
                 try:
                     path = quote(file["path"], safe="/")
@@ -90,7 +121,11 @@ async def import_github(value, progress=lambda *_: None, *, transport=None):
                     content = raw.decode("utf-8")
                     if "\0" in content:
                         raise ValueError("binary file")
-                    files.append({"path": file["path"], "content": content})
+                    if indexed_bytes + len(raw) > limits["maxTotalBytes"]:
+                        actual_byte_skipped.append(file["path"])
+                    else:
+                        indexed_bytes += len(raw)
+                        files.append({"path": file["path"], "content": content})
                 except (ValueError, KeyError, httpx.HTTPError):
                     failed.append(file["path"])
                 completed += 1
@@ -101,5 +136,8 @@ async def import_github(value, progress=lambda *_: None, *, transport=None):
             raise ValueError("未能读取可索引的文本文件，请检查网络或更换仓库。")
         return {"meta": {"id": repo, "name": info["name"], "description": info.get("description") or "", "url": f"https://github.com/{repo}",
                          "sha": sha, "branch": info["default_branch"], "language": info.get("language") or "Mixed",
-                         "totalEligible": len(candidates), "partial": bool(tree.get("truncated") or len(candidates) > 100 or failed),
+                         "totalEligible": len(candidates), "partial": bool(tree.get("truncated") or file_skipped or byte_skipped or actual_byte_skipped or failed),
+                         "importLimits": limits, "indexedBytes": indexed_bytes,
+                         "skippedFileLimit": file_skipped, "skippedByteLimit": byte_skipped + len(actual_byte_skipped),
+                         "treeTruncated": bool(tree.get("truncated")),
                          "failedFiles": sorted(failed), "demo": False}, "files": sorted(files, key=lambda f: f["path"])}

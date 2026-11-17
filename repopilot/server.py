@@ -16,7 +16,7 @@ from .discovery import DiscoveryService, DiscoveryUnavailable
 from .embeddings import make_embedder
 from .hybrid import HybridRetrieval
 from .explorer import search_files, validate_search
-from .github import import_github, parse_repo
+from .github import import_github, import_limits, parse_repo
 from .models import MODEL_OPTIONS, discover_models, model_config, select_model
 from .store import Store, now
 
@@ -258,7 +258,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     options = MODEL_OPTIONS[:]
                     if not any(m["id"] == cfg["model"] for m in options):
                         options.append({"id": cfg["model"], "label": cfg["model"] + " · 服务端配置", "efforts": []})
-                    return {"modelConfigured": bool(cfg["key"]), "model": cfg["model"], "models": options, "backend": "python"}
+                    return {"modelConfigured": bool(cfg["key"]), "model": cfg["model"], "models": options, "backend": "python", "importLimits": import_limits()}
                 if path == "/api/models":
                     return {"models": await discover_models()}
                 if path == "/api/discover":
