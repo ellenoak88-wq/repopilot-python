@@ -32,3 +32,6 @@ docker compose down
 ## 本地向量模型
 
 混合检索使用 CPU，不要求 GPU 或 Embedding API Key。首次建立向量索引需下载模型；完整缓存位于 `/app/data/models`，随现有数据卷保留。SQLite 的 `vector_indexes` 表也随卷持久化。模型权重不会进入 Git 或构建上下文。现有 Docker HTTP/HTTPS 代理配置同样用于模型下载；`HF_HUB_DISABLE_XET=1` 使用常规 HTTP 下载。索引完成后，缓存完整时可离线查询。
+
+
+学习档案与会话共用 `/app/data/repopilot.db`，现有挂载目录即可持久化，无需新增服务。更新前可用 `python -m repopilot.migrate` 在线备份，首次启动自动补充历史版本字段；参见 [第六轮扩展说明](upgrade-06.md)。
