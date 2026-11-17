@@ -140,7 +140,11 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
 
     async def import_job(value, job):
         try:
-            result = await importer(value, lambda message, progress: job.update(message=message, progress=progress))
+            existing = next((r for r in store.list() if r["id"].lower() == value.lower()), None)
+            options = {"existing": store.files(existing["id"])} if importer is import_github and existing else {}
+            result = await importer(value, lambda message, progress: job.update(message=message, progress=progress), **options)
+            if existing:
+                result = {**result, "meta": {**result["meta"], "id": existing["id"]}}
             repo = store.save_repository(result["meta"], result["files"])
             job.update(state="done", progress=100, message="索引完成", repo=repo)
         except Exception as e:
@@ -169,12 +173,15 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
         if "regenerateId" in body:
             if type(replace_id) is not int or not context or context[-1]["id"] != replace_id:
                 raise ApiError(400, "只能重新生成当前会话最后一条回答。")
+            if context[-1].get("indexVersion") != repo["indexVersion"]:
+                raise ApiError(409, "这条回答属于旧索引，请重新提问以使用当前源码。")
             question = context[-1]["question"]
             context = context[:-1]
         else:
             question = body.get("question")
         if not isinstance(question, str) or not question.strip() or len(question) > 2000:
             raise ApiError(400, "请输入 1–2000 字的问题。")
+        context = [h for h in context if h.get("indexVersion") == repo["indexVersion"]]
         retrieval_mode = body.get("retrieval", "hybrid")
         if retrieval_mode not in ("hybrid", "bm25"):
             raise ApiError(400, "检索方式无效。")
@@ -352,9 +359,15 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                 if path == "/api/demo":
                     idle()
                     return store.get(DEMO["meta"]["id"]) or store.save_repository(DEMO["meta"], DEMO["files"])
-                if path == "/api/import":
+                if path in ("/api/import", "/api/repo/sync"):
                     idle()
-                    value = parse_repo(body.get("url"))
+                    if path.endswith("/sync"):
+                        current = get_repo(body.get("repo"))
+                        if current.get("demo"):
+                            raise ApiError(400, "内置示例无需同步 GitHub。")
+                        value = parse_repo(current["id"])
+                    else:
+                        value = parse_repo(body.get("url"))
                     if "reuseExisting" in body and type(body["reuseExisting"]) is not bool:
                         raise ApiError(400, "复用参数必须为布尔值。")
                     if body.get("reuseExisting"):

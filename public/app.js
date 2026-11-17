@@ -32,7 +32,8 @@ function setBusy(value) {
   $('stop-button').disabled = !chatController;
   $('stop-button').classList.toggle('hidden', !chatController);
   $('session-choice').disabled=value; $('session-search').disabled=value;
-  $('regenerate-button').disabled=value || !history.length;
+  $('regenerate-button').disabled=value || !history.length || historical(history.at(-1));
+  $('sync-button').disabled=value || !active || active.demo;
   if (!value) updateEfforts(false);
 }
 async function refreshRepos() {
@@ -42,30 +43,33 @@ async function refreshRepos() {
     button.title = repo.id; button.disabled = busy; button.onclick = () => openRepo(repo.id).catch(e => toast(e.message)); return button;
   }));
 }
-function renderSources(sources) {
+function historical(item) { return !!item?.indexVersion && item.indexVersion !== active?.indexVersion; }
+function renderSources(sources, old = false) {
   $('source-count').textContent = sources.length;
   $('sources').replaceChildren(...sources.map(source => {
     const item = el('details', 'source'); item.id = `source-${source.id}`;
     const read = el('button', 'secondary', '阅读完整文件'); read.type='button'; read.onclick=()=>openFile(active.id,source.path,source.start,source.end);
     item.append(el('summary', '', `[${source.id}] ${source.path} · L${source.start}–${source.end}`), el('pre', '', source.text));
-    item.append(read);
+    if (!old) item.append(read); else item.append(el('p', 'muted', '历史版本：此处保留当时的引用摘录，完整文件请查看对应 GitHub commit。'));
     if (source.url) { const a = el('a', '', '在 GitHub 查看 ↗'); a.href = source.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; item.append(a); }
     return item;
   }));
 }
-function renderAnswer(container, answer, sources, markdown = true) {
+function renderAnswer(container, answer, sources, markdown = true, old = false) {
   renderMarkdownAnswer(container, answer, sources, id => {
-    renderSources(sources);
+    renderSources(sources, old);
     const target = $(`source-${id}`);
     if (target) target.open = true;
-    const source=sources.find(s=>s.id===id);if(source)openFile(active.id,source.path,source.start,source.end);
+    const source=sources.find(s=>s.id===id);if(source && !old)openFile(active.id,source.path,source.start,source.end);else target?.scrollIntoView({block:"nearest"});
   }, markdown);
 }
 function addMessage(item) {
   const user = el('article', 'message user'); user.append(el('div', 'message-label', 'YOU'), el('div', 'message-content', item.question));
   const assistant = el('article', 'message assistant'); const label = el('div', 'message-label', 'REPOPILOT');
   label.append(el('small', '', item.mode === 'agent' ? `AGENT · ${item.model || '默认模型'} · ${item.effort || 'default'}` : '检索摘录 · 未调用生成模型'));
-  const content = el('div', 'message-content'); renderAnswer(content, item.answer, item.sources, item.mode === 'agent');
+  if (historical(item)) label.append(el('small', '', `历史版本 · ${(item.repoSha || '未知').slice(0, 7)} · 当前源码已更新`));
+  if (item.versionInferred) label.append(el('small', '', '版本由迁移时索引推定'));
+  const content = el('div', 'message-content'); renderAnswer(content, item.answer, item.sources, item.mode === 'agent', historical(item));
   const trace = el('details', 'trace'); trace.append(el('summary', '', `${item.trace.length} 个执行步骤 · 查看工具记录`));
   const steps = el('ol'); item.trace.forEach(s => steps.append(el('li', '', `${s.label} — ${s.detail}`))); trace.append(steps);
   assistant.append(label, content, trace); $('messages').append(user, assistant);
@@ -79,6 +83,8 @@ async function openRepo(id, sessionId) {
   showView('project');
   $('breadcrumb').textContent = active.id; $('project-name').textContent = active.name; $('project-description').textContent = active.description;
   $('project-stats').replaceChildren(...[`${active.language}`, `${active.fileCount} 个文件`, `${active.chunkCount} 个片段`, active.demo ? '内置演示数据' : `commit ${active.sha.slice(0, 7)}`].map(t => el('span', '', t)));
+  const sync = active.lastSync;
+  $('sync-summary').textContent = sync?.previousSha ? `最近同步：新增 ${sync.added} · 更新 ${sync.updated} · 移出当前索引 ${sync.removed} · 未变 ${sync.unchanged}。历史会话与清单进度已保留。` : '';
   $('coverage').classList.toggle('hidden', !active.partial);
   const skipped = [active.skippedFileLimit ? `数量限制跳过 ${active.skippedFileLimit} 个` : '', active.skippedByteLimit ? `总量限制跳过 ${active.skippedByteLimit} 个` : '', active.treeTruncated ? 'GitHub 目录树返回不完整' : ''].filter(Boolean).join('；');
   $('coverage').textContent = `当前为部分索引：已收录 ${active.fileCount} 个文件（已发现候选 ${active.totalEligible} 个，失败 ${active.failedFiles?.length || 0} 个）。${skipped ? skipped + '。' : ''}未收录文件不会作为回答依据。`;
@@ -87,8 +93,9 @@ async function openRepo(id, sessionId) {
   retrieval.setRepository(active);
   $('messages').replaceChildren();
   if (!history.length) { const empty = el('div', 'empty-chat'); empty.append(el('b', '', '从好奇，到理解。'), document.createTextNode('选择一个问题，或描述你想了解的代码。')); $('messages').append(empty); }
-  history.forEach(addMessage); renderSources(history.at(-1)?.sources || []); await refreshRepos();
-  $('regenerate-button').disabled=!history.length;
+  history.forEach(addMessage); renderSources(history.at(-1)?.sources || [], historical(history.at(-1))); await refreshRepos();
+  $('regenerate-button').disabled=!history.length || historical(history.at(-1));
+  $('sync-button').disabled=!!active.demo;
   $('question').focus();
 }
 function renderSessions(items = sessions) {
@@ -128,16 +135,18 @@ $('demo-button').onclick = async () => {
   try { const repo = await api('/api/demo', {}); setBusy(false); await openRepo(repo.id); } catch (e) { toast(e.message); } finally { setBusy(false); }
 };
 $('import-form').onsubmit = event => { event.preventDefault(); importRepository($('repo-url').value); };
-async function importRepository(url, reuseExisting = false) {
+$('sync-button').onclick = () => { if (active && !active.demo) importRepository(active.id, false, true); };
+async function importRepository(url, reuseExisting = false, sync = false) {
   if (busy) return; setBusy(true); $('progress-panel').classList.remove('hidden'); $('progress-text').textContent = '准备导入…'; $('progress-bar').value = 0;
   try {
-    let job = await api('/api/import', { url, reuseExisting });
+    const sessionId = sync ? currentSession?.id : undefined;
+    let job = await api(sync ? '/api/repo/sync' : '/api/import', sync ? {repo: url} : { url, reuseExisting });
     while (job.state === 'running') {
       $('progress-text').textContent = job.message; $('progress-bar').value = job.progress;
       await new Promise(resolve => setTimeout(resolve, 700)); job = await api(`/api/jobs/${job.id}`);
     }
     if (job.state === 'error') throw Error(job.error);
-    setBusy(false); await openRepo(job.repo.id);
+    setBusy(false); await openRepo(job.repo.id, sessionId);
   } catch (e) { toast(e.message); } finally { setBusy(false); $('progress-panel').classList.add('hidden'); }
 }
 async function submitQuestion(question, regenerateId) {
@@ -146,7 +155,7 @@ async function submitQuestion(question, regenerateId) {
   chatController = new AbortController();
   setBusy(true); $('send-button').textContent = '生成中…'; $('toast').classList.add('hidden');
   $('messages').querySelector('.empty-chat')?.remove();
-  const item = { question, answer: '', sources: [], trace: [], mode: $('mode').value, model: selectedModel(), effort: $('effort-choice').value };
+  const item = { question, repoSha:active.sha, indexVersion:active.indexVersion, answer: '', sources: [], trace: [], mode: $('mode').value, model: selectedModel(), effort: $('effort-choice').value };
   const view = addMessage(item);
   view.content.textContent = '正在检索代码…';
   let completed = false; let frame;
@@ -191,7 +200,7 @@ $('question').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isCo
 document.querySelectorAll('[data-question]').forEach(button => button.onclick = () => submitQuestion(button.dataset.question));
 $('export-button').onclick = () => {
   if (!active) return;
-  const text = `# ${active.id} · ${currentSession?.title || '探索笔记'}\n\nCommit: ${active.sha}\n\n` + history.map(h => `## ${h.question}\n\n${h.answer}\n\n### 参考来源\n${h.sources.map(s => `- [${s.id}] ${s.path}:${s.start}–${s.end}${s.url ? ` (${s.url})` : ''}`).join('\n')}`).join('\n\n---\n\n');
+  const text = `# ${active.id} · ${currentSession?.title || '探索笔记'}\n\nCommit: ${active.sha}\n\n` + history.map(h => `## ${h.question}\n\n回答版本：${h.repoSha || "未知"}${h.versionInferred ? "（迁移时推定）" : ""}\n\n${h.answer}\n\n### 参考来源\n${h.sources.map(s => `- [${s.id}] ${s.path}:${s.start}–${s.end}${s.url ? ` (${s.url})` : ''}`).join('\n')}`).join('\n\n---\n\n');
   const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' })); const a = el('a'); a.href = url; a.download = `${active.name}-${currentSession.id.slice(0,8)}-notes.md`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 function selectedModel() {

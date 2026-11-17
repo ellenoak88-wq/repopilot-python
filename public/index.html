@@ -40,9 +40,9 @@
     </section>
 
     <section id="project" class="project hidden">
-      <div class="project-heading"><div><div class="eyebrow">REPOSITORY EXPLORER</div><h1 id="project-name"></h1><p id="project-description"></p></div><button id="export-button" class="secondary">导出笔记 ↓</button></div>
+      <div class="project-heading"><div><div class="eyebrow">REPOSITORY EXPLORER</div><h1 id="project-name"></h1><p id="project-description"></p></div><button id="sync-button" class="secondary" type="button">同步仓库 ↻</button><button id="export-button" class="secondary">导出笔记 ↓</button></div>
       <div id="project-stats" class="stats"></div>
-      <div id="coverage" class="coverage hidden"></div>
+      <p id="sync-summary" class="muted"></p><div id="coverage" class="coverage hidden"></div>
       <section id="retrieval-panel" class="retrieval-panel" aria-label="混合检索设置">
         <div class="retrieval-heading"><div><strong id="retrieval-state" role="status">正在检查向量索引…</strong><p id="retrieval-info"></p></div><label>问答检索方式<select id="retrieval-mode"><option value="hybrid">混合检索 · BM25 + 向量</option><option value="bm25">关键词检索 · BM25</option></select></label></div>
         <div class="retrieval-actions"><button id="retrieval-build" type="button" class="primary">建立向量索引</button><button id="retrieval-refresh" type="button" class="secondary">检查索引状态</button><span>本地计算，无需 Embedding API Key；首次建立需下载约 220 MB 模型权重及分词文件。</span></div>

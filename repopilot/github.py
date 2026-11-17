@@ -1,6 +1,7 @@
 """Bounded, read-only public GitHub repository ingestion."""
 import asyncio
 import base64
+import hashlib
 import os
 import re
 from urllib.parse import quote
@@ -65,9 +66,14 @@ def priority(file):
     return (3 if path.startswith("docs/") else 4), path
 
 
-async def import_github(value, progress=lambda *_: None, *, transport=None):
+async def import_github(value, progress=lambda *_: None, *, transport=None, existing=None):
     repo = parse_repo(value)
     limits = import_limits()
+    cached = {}
+    for file in existing or []:
+        raw = file["content"].encode("utf-8")
+        blob = hashlib.sha1(f"blob {len(raw)}\0".encode() + raw).hexdigest()
+        cached[(file["path"], blob)] = raw
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "RepoPilot-Python", "X-GitHub-Api-Version": "2022-11-28"}
     if os.environ.get("GITHUB_TOKEN"):
         headers["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
@@ -103,19 +109,21 @@ async def import_github(value, progress=lambda *_: None, *, transport=None):
             async with semaphore:
                 try:
                     path = quote(file["path"], safe="/")
-                    try:
-                        async with client.stream("GET", f"https://raw.githubusercontent.com/{repo}/{sha}/{path}", timeout=8) as response:
-                            response.raise_for_status()
-                            raw = bytearray()
-                            async for part in response.aiter_bytes():
-                                raw.extend(part)
-                                if len(raw) > 80000:
-                                    raise ValueError("file too large")
-                    except (httpx.HTTPError, ValueError):
-                        blob = await api(f"/git/blobs/{file['sha']}")
-                        if blob.get("encoding") != "base64" or blob.get("size", 80001) > 80000:
-                            raise ValueError("无法读取 Git blob。")
-                        raw = base64.b64decode(blob["content"])
+                    raw = cached.get((file["path"], file["sha"]))
+                    if raw is None:
+                        try:
+                            async with client.stream("GET", f"https://raw.githubusercontent.com/{repo}/{sha}/{path}", timeout=8) as response:
+                                response.raise_for_status()
+                                raw = bytearray()
+                                async for part in response.aiter_bytes():
+                                    raw.extend(part)
+                                    if len(raw) > 80000:
+                                        raise ValueError("file too large")
+                        except (httpx.HTTPError, ValueError):
+                            blob = await api(f"/git/blobs/{file['sha']}")
+                            if blob.get("encoding") != "base64" or blob.get("size", 80001) > 80000:
+                                raise ValueError("无法读取 Git blob。")
+                            raw = base64.b64decode(blob["content"])
                     if len(raw) > 80000:
                         raise ValueError("file too large")
                     content = raw.decode("utf-8")
@@ -140,4 +148,4 @@ async def import_github(value, progress=lambda *_: None, *, transport=None):
                          "importLimits": limits, "indexedBytes": indexed_bytes,
                          "skippedFileLimit": file_skipped, "skippedByteLimit": byte_skipped + len(actual_byte_skipped),
                          "treeTruncated": bool(tree.get("truncated")),
-                         "failedFiles": sorted(failed), "demo": False}, "files": sorted(files, key=lambda f: f["path"])}
+                         "failedFiles": sorted(failed), "reusedFiles": sum((f["path"], f["sha"]) in cached for f in selected), "demo": False}, "files": sorted(files, key=lambda f: f["path"])}
