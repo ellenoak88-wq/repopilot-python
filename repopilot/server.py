@@ -385,6 +385,8 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                 body = await body_json(request)
                 if path == "/api/wiki/draft":
                     return wiki.draft(get_repo(body.get("repo")), body.get("chatId"))
+                if path == "/api/wiki/delete":
+                    return wiki.delete(get_repo(body.get("repo"))["id"], body.get("pageId"), body.get("revision"))
                 if path in ("/api/wiki/create", "/api/wiki/merge"):
                     idle()
                     merge = path.endswith("/merge")

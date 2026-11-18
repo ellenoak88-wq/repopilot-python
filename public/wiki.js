@@ -125,7 +125,16 @@ export function createWiki({api, openFile}) {
         archive.append(button(page.title, () => run(async () => {
           clearTimeout(refreshTimer);
           const item = await detail(page.id);
-          show(item.title, button('返回专题列表', () => run(library)),
+          const remove = button('删除手动专题', () => {
+            if (!confirm('删除手动专题「' + item.title + '」及其中保存的全部结论？')) return;
+            run(async () => {
+              await api('/api/wiki/delete', {repo:repo.id, pageId:item.id, revision:item.revision});
+              await library();
+            });
+          });
+          const actions = element('div', undefined, 'learning-heading');
+          actions.append(button('返回专题列表', () => run(library)), remove);
+          show(item.title, actions,
                ...item.entries.map(entry => section(entry, item.currentIndexVersion)));
         })));
       }

@@ -50,6 +50,17 @@ async def test_wiki_lifecycle(tmp_path):
         assert second["content"] == merge["content"] and second["answer"] == "路由 [S1]"
         assert second["sources"][0]["path"] == "app.py"
         assert first["indexVersion"] != detail["currentIndexVersion"]
+        chat = store.add_chat(repo, {"question":"测试", "answer":"独立专题"})
+        draft = (await client.post("/api/wiki/draft", json={"repo":repo, "chatId":chat["id"]})).json()
+        extra = (await client.post("/api/wiki/create", json={"repo":repo, "chatId":chat["id"],
+                                  "originKey":draft["originKey"], "title":"待删除专题"})).json()
+        deletion = {"repo": repo, "pageId": extra["id"], "revision": extra["revision"]}
+        assert (await client.post("/api/wiki/delete", json={**deletion, "repo": other})).status_code == 400
+        assert (await client.post("/api/wiki/delete", json={**deletion, "revision": 9})).status_code == 409
+        assert (await client.post("/api/wiki/delete", json=deletion)).json() == {"deleted": extra["id"]}
+        assert [p["id"] for p in (await client.get("/api/wiki", params={"repo": repo})).json()] == [page]
+        assert not store.db.execute("SELECT 1 FROM wiki_entries WHERE page_id=?", (extra["id"],)).fetchone()
+        assert store.get_chat(repo, chat["id"]) is not None
         response = await client.post("/api/repos/delete", json={"repo": repo, "indexVersion": detail["currentIndexVersion"]})
         assert response.status_code == 200
         assert not store.db.execute("SELECT 1 FROM wiki_entries").fetchone()

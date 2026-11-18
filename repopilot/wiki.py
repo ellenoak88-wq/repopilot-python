@@ -51,6 +51,16 @@ class Wiki:
         return {**page, "entries": [json.loads(row[0]) for row in entries],
                 "currentIndexVersion": repo["indexVersion"]}
 
+    def delete(self, repo, page_id, revision):
+        db = self.store.db
+        with db:
+            page = self._page(repo, page_id)
+            if type(revision) is not int or revision != page["revision"]:
+                raise WikiConflict("专题已更新，请重新打开后再删除。")
+            db.execute("DELETE FROM wiki_entries WHERE repo=? AND page_id=?", (repo, page_id))
+            db.execute("DELETE FROM wiki_pages WHERE repo=? AND id=?", (repo, page_id))
+        return {"deleted": page_id}
+
     def draft(self, repo, chat_id):
         if type(chat_id) is not int:
             raise ValueError("回答 ID 无效。")
