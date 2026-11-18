@@ -14,12 +14,6 @@ function button(text, action, className = 'secondary') {
   return node;
 }
 
-function field(label, input) {
-  const node = element('label', label);
-  node.append(input);
-  return node;
-}
-
 export function createWiki({api, openFile}) {
   const dialog = element('dialog', undefined, 'wiki-dialog');
   dialog.setAttribute('aria-labelledby', 'wiki-heading');
@@ -93,79 +87,61 @@ export function createWiki({api, openFile}) {
     return article;
   }
 
+  let refreshTimer;
+  dialog.addEventListener('close', () => clearTimeout(refreshTimer));
+
+  function article(key, edition) {
+    clearTimeout(refreshTimer);
+    const page = edition.pages[key];
+    const content = page.facts.map(f => f.text + ' ' + f.sources.map(id => '[' + id + ']').join(' ')).join('\n\n');
+    const info = page.engine ? 'Agent 提炼 · ' + page.engine : '本地源码导览';
+    const entry = section({question:info + ' · 修订 ' + page.revision, content, mode:page.engine ? 'agent' : 'extractive',
+      sources:page.sources, indexVersion:edition.version, repoSha:page.sha}, edition.currentVersion);
+    const related = element('div', undefined, 'wiki-list');
+    if (page.related.length) related.append(element('h3', '关联专题'));
+    for (const link of page.related) {
+      const refs = link.sources.map(id => '[' + id + ']').join(' ');
+      related.append(button(link.label + ' · ' + link.reason + ' ' + refs, () => article(link.key, edition)));
+    }
+    show(page.title, button('返回专题列表', () => run(library)), entry, related);
+  }
+
   async function library() {
-    const pages = await api('/api/wiki?' + new URLSearchParams({repo:repo.id}));
+    clearTimeout(refreshTimer);
+    const params = new URLSearchParams({repo:repo.id});
+    const [edition, saved] = await Promise.all([api('/api/wiki/auto?' + params), api('/api/wiki?' + params)]);
     const list = element('div', undefined, 'wiki-list');
-    for (const page of pages) {
-      list.append(button(page.title + ' · ' + page.revision + ' 条结论', () => run(() => readPage(page.id))));
+    if (edition.running) list.append(element('p', '正在根据项目源码更新专题…'));
+    if (edition.error) list.append(element('p', edition.error));
+    if (edition.version && edition.version !== edition.currentVersion) list.append(element('p', '以下专题来自上一次索引。'));
+    for (const [key, page] of Object.entries(edition.pages)) {
+      list.append(button(page.title + (page.engine ? '' : ' · 源码导览'), () => article(key, edition)));
     }
-    if (!pages.length) list.append(element('p', '还没有专题页。在项目回答下选择「保存到 Wiki」即可创建。'));
+    if (!edition.running && !Object.keys(edition.pages).length) list.append(element('p', '当前索引没有可编写专题的文本。'));
+    if (saved.length) {
+      const archive = element('details');
+      archive.append(element('summary', '手动保存的专题 · ' + saved.length));
+      for (const page of saved) {
+        archive.append(button(page.title, () => run(async () => {
+          clearTimeout(refreshTimer);
+          const item = await detail(page.id);
+          show(item.title, button('返回专题列表', () => run(library)),
+               ...item.entries.map(entry => section(entry, item.currentIndexVersion)));
+        })));
+      }
+      list.append(archive);
+    }
     show('项目 Wiki', list);
+    if (edition.running) refreshTimer = setTimeout(() => { if (dialog.open) run(library); }, 1800);
   }
 
-  async function readPage(id) {
-    const page = await detail(id);
-    show(page.title, button('返回专题列表', () => run(library)),
-         ...page.entries.map(entry => section(entry, page.currentIndexVersion)));
-  }
-
-  function compose(draft, pages) {
-    const select = element('select'), title = element('input'), content = element('textarea');
-    select.append(new Option('新建专题页', ''), ...pages.map(page => new Option(page.title, page.id)));
-    title.maxLength = 120;
-    title.value = draft.question.slice(0, 120);
-    const titleField = field('专题标题', title);
-    select.onchange = () => { titleField.hidden = !!select.value; };
-    content.rows = 8;
-    content.value = draft.answer;
-    const renderEditor = () => show('保存到 Wiki', field('目标专题', select), titleField,
-      field('本次结论', content), button('预览变更', () => run(preview), 'primary'));
-
-    async function preview() {
-      const conclusion = content.value.trim();
-      if (!conclusion || (!select.value && !title.value.trim())) throw Error('请填写专题标题和本次结论。');
-      const page = select.value ? await detail(select.value) : null;
-      if (page?.entries.some(entry => entry.originKey === draft.originKey)) throw Error('这条回答已经收录在此专题页。');
-      const payload = {repo:repo.id, chatId:draft.chatId, originKey:draft.originKey};
-      if (conclusion !== draft.answer.trim()) payload.content = conclusion;
-      if (payload.content?.length > 12000) throw Error('编辑后的结论最多 12000 字。');
-      const elements = [element('h3', page?.title || title.value.trim())];
-      if (page) {
-        Object.assign(payload, {pageId:page.id, revision:page.revision});
-        const existing = element('details');
-        existing.open = true;
-        existing.append(element('summary', '已有内容 · ' + page.revision + ' 条结论'),
-                        ...page.entries.map(entry => section(entry, page.currentIndexVersion)));
-        elements.push(existing);
-      } else payload.title = title.value.trim();
-      const addition = element('div', undefined, 'wiki-addition');
-      addition.append(element('strong', '本次新增'), section({...draft, content:conclusion}, page?.currentIndexVersion ?? repo.indexVersion));
-      const actions = element('div', undefined, 'wiki-actions');
-      const save = button(page ? '确认合并' : '创建专题页', () => run(async () => {
-        const result = await api('/api/wiki/' + (page ? 'merge' : 'create'), payload);
-        show('专题已保存', button('查看专题页', () => run(() => readPage(result.id))));
-        await readPage(result.id);
-      }), 'primary');
-      actions.append(button('返回编辑', () => { status.textContent = ''; renderEditor(); }), save);
-      show('预览变更', ...elements, addition, actions);
-    }
-    renderEditor();
-  }
-
-  return async function open(repository, chatId) {
+  return async function open(repository) {
     if (pending || dialog.open) return;
     repo = repository;
     dialog.querySelector('[data-repo]').textContent = repo.id;
     show('项目 Wiki');
     dialog.showModal();
-    await run(async () => {
-      if (!chatId) { await library(); return; }
-      const [draft, pages] = await Promise.all([
-        api('/api/wiki/draft', {repo:repo.id, chatId}),
-        api('/api/wiki?' + new URLSearchParams({repo:repo.id}))
-      ]);
-      compose(draft, pages);
-    });
+    await run(library);
   };
 }
 

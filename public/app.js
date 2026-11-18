@@ -130,12 +130,6 @@ function addMessage(item) {
     const edit=el('button','secondary','查看档案当前版本');edit.type='button';edit.onclick=()=>learning.open(memory.id);details.append(edit);assistant.append(details);
   }
   if(item.id) { const save=el('button','secondary save-learning','存为学习档案');save.type='button';save.onclick=()=>learning.saveChat(active.id,item.id);assistant.append(save); }
-  if (item.id) {
-    const saveWiki = el('button', 'secondary save-wiki', '保存到 Wiki');
-    saveWiki.type = 'button';
-    saveWiki.onclick = () => openWiki(active, item.id);
-    assistant.append(saveWiki);
-  }
   $('messages').append(user, assistant);
   return { assistant, content, label, steps, trace };
 }
