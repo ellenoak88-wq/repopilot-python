@@ -296,7 +296,7 @@ async function refreshModels(quiet = false) {
     const data = await api('/api/models');
     modelCatalog = [...data.models, ...modelCatalog.filter(m => !data.models.some(p => p.id === m.id))];
     renderModelChoices();
-    $('model-hint').textContent = `接口返回 ${data.models.length} 个模型。按时间从新到旧：优先版本日期，其余用接口创建时间；无时间预设置底并按版本倒序，需服务商支持。`;
+    $('model-hint').textContent = `接口返回 ${data.models.length} 个模型。按时间从新到旧：优先版本或发布日期，其余用接口创建时间；无时间预设置底并按版本倒序，需服务商支持。`;
   } catch (error) { if (!quiet) toast(error.message); } finally { setBusy(false); }
 }
 $('refresh-models').onclick = () => refreshModels();

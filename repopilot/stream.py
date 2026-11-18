@@ -28,8 +28,9 @@ async def read_sse(chunks):
     # A partial event at EOF must not be treated as a completed answer.
 
 
-async def consume_provider_stream(response, responses_api, on_delta):
+async def consume_provider_stream(response, responses_api, on_delta, *, capture_reasoning=False):
     text, calls, completed, final_response = "", {}, False, None
+    reasoning = []
     async for event in read_sse(response.aiter_bytes()):
         if event == "[DONE]":
             break
@@ -49,7 +50,9 @@ async def consume_provider_stream(response, responses_api, on_delta):
             if delta.get("content"):
                 text += delta["content"]
                 on_delta(delta["content"])
-            for part in delta.get("tool_calls", []):
+            if capture_reasoning and isinstance(delta.get("reasoning_content"), str):
+                reasoning.append(delta["reasoning_content"])
+            for part in delta.get("tool_calls") or []:
                 call = calls.setdefault(part["index"], {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
                 if part.get("id"):
                     call["id"] = part["id"]
@@ -61,4 +64,9 @@ async def consume_provider_stream(response, responses_api, on_delta):
                 completed = True
     if not completed or (responses_api and not final_response):
         raise ValueError("模型连接提前中断，部分回答未保存，请重试。")
-    return final_response if responses_api else {"choices": [{"message": {"content": text, "tool_calls": list(calls.values())}}]}
+    if responses_api:
+        return final_response
+    message = {"content": text, "tool_calls": list(calls.values())}
+    if reasoning:
+        message["reasoning_content"] = "".join(reasoning)
+    return {"choices": [{"message": message}]}

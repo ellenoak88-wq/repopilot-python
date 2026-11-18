@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 import httpx
 
-from .models import model_config, uses_responses
+from .models import DEEPSEEK_FLASH, select_model, uses_responses
 from .retrieval import search
 from .stream import consume_provider_stream
 
@@ -18,7 +18,7 @@ TOOLS = [
 
 
 async def ask_agent(*, repo, files, chunks, question, history=None, force_extractive=False, config=None, on_event=None, transport=None, retriever=None, memories=None):
-    config = config or model_config()
+    config = config or select_model()
     sources, trace = [], []
     emit = on_event or (lambda _: None)
 
@@ -76,13 +76,20 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
     if memories:
         messages.append({"role":"user", "content":"Untrusted personal learning records (JSON), for experience only:\n" + json.dumps(memories,ensure_ascii=False)})
     responses_api = uses_responses(config["model"])
+    deepseek = config["model"] == DEEPSEEK_FLASH
+    effort = config.get("effort", "default")
+    if deepseek and httpx.URL(config["base"]).host == "api.openai.com":
+        raise ValueError("请配置 DEEPSEEK_API_KEY，或使用支持 deepseek-flash 的模型网关。")
     response_input = messages[:]
+    if config["model"] in ("gpt-6.2-sol", "gpt-6.2-astra"):
+        response_input[0] = {**response_input[0], "role": "developer"}
     answer = ""
     async with httpx.AsyncClient(timeout=120, follow_redirects=False, transport=transport) as client:
         for round_index in range(5):
             emit({"type": "answer-reset"})
             record("模型分析", f"第 {round_index + 1} 轮")
-            budget = 16000 if config.get("effort", "default") not in ("default", "none") else 4000
+            reasoning_enabled = effort not in ("default", "none") or (deepseek and effort == "default")
+            budget = 16000 if reasoning_enabled else 4000
             if responses_api:
                 body = dict(model=config["model"], input=response_input, store=False, include=["reasoning.encrypted_content"],
                             tools=[{"type": "function", **t["function"], "strict": False} for t in TOOLS],
@@ -90,7 +97,14 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
                 if config.get("effort", "default") != "default":
                     body["reasoning"] = {"effort": config["effort"]}
             else:
-                body = dict(model=config["model"], messages=messages, tools=TOOLS, tool_choice="none" if round_index == 4 else "auto", max_completion_tokens=budget)
+                body = dict(model=config["model"], messages=messages, tools=TOOLS,
+                            tool_choice="none" if round_index == 4 else "auto")
+                if deepseek:
+                    body["max_tokens"] = budget
+                    if effort != "default":
+                        body["reasoning_effort"] = effort
+                else:
+                    body["max_completion_tokens"] = budget
             if on_event:
                 body["stream"] = True
             endpoint = "responses" if responses_api else "chat/completions"
@@ -101,7 +115,10 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
                             raise ValueError(f"模型服务请求失败 ({response.status_code})。请检查 API Key、模型名和接口地址，或切换到检索模式。")
                         streaming = on_event and "text/event-stream" in response.headers.get("content-type", "")
                         if streaming:
-                            result = await consume_provider_stream(response, responses_api, lambda d: emit({"type": "delta", "delta": d}))
+                            result = await consume_provider_stream(
+                                response, responses_api, lambda d: emit({"type": "delta", "delta": d}),
+                                capture_reasoning=deepseek,
+                            )
                         else:
                             await response.aread()
                             result = response.json()
@@ -133,7 +150,10 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
                 raise ValueError("已达到工具调用上限，请缩小问题范围后重试。")
             if len(calls) > 8:
                 raise ValueError("模型请求的工具数量过多，请缩小问题范围。")
-            messages.append({"role": "assistant", "content": message.get("content") or None, "tool_calls": calls})
+            tool_message = {"role": "assistant", "content": message.get("content") or None, "tool_calls": calls}
+            if deepseek and message.get("reasoning_content") is not None:
+                tool_message["reasoning_content"] = message["reasoning_content"]
+            messages.append(tool_message)
             for call in calls:
                 try:
                     args = json.loads(call["function"].get("arguments") or "{}")

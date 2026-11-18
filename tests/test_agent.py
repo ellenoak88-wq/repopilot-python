@@ -14,7 +14,7 @@ CHUNKS = chunk_file(**FILES[0])
 
 
 def test_model_validation():
-    assert len([m for m in MODEL_OPTIONS if m["id"].endswith("-sol")]) == 3
+    assert len([m for m in MODEL_OPTIONS if m["id"].endswith("-sol")]) == 4
     assert select_model("gpt-6.1-astra", "ultra")["effort"] == "ultra"
     with pytest.raises(ValueError):
         select_model("gpt-6-luna", "ultra")
@@ -51,7 +51,8 @@ async def test_partial_stream_rejected(responses_api, events):
         await consume_provider_stream(sse_response(events), responses_api, lambda _: None)
 
 
-async def test_responses_tool_round_preserves_reasoning_and_citations():
+@pytest.mark.parametrize("model", ["gpt-6.1-sol", "gpt-6.2-sol", "gpt-6.2-astra"])
+async def test_responses_tool_round_preserves_reasoning_and_citations(model):
     requests, events = [], []
     reasoning = {"type": "reasoning", "id": "r1", "encrypted_content": "opaque", "summary": []}
     def handler(request):
@@ -59,6 +60,7 @@ async def test_responses_tool_round_preserves_reasoning_and_citations():
         requests.append(body)
         assert request.url.path == "/v1/responses"
         assert body["reasoning"] == {"effort": "high"}
+        assert body["input"][0]["role"] == ("developer" if model.startswith("gpt-6.2") else "system")
         if len(requests) == 1:
             return sse_response([{"type": "response.completed", "response": {"status": "completed", "output": [reasoning,
                 {"type": "function_call", "call_id": "c1", "name": "read_file", "arguments": json.dumps({"path": "README.md", "start": 1})}]}}])
@@ -66,7 +68,7 @@ async def test_responses_tool_round_preserves_reasoning_and_citations():
         assert body["input"][-1]["type"] == "function_call_output"
         return sse_response([{"type": "response.output_text.delta", "delta": "安装 [S1] [S999]"},
             {"type": "response.completed", "response": {"status": "completed", "output": [{"type": "message", "content": [{"type": "output_text", "text": "安装 [S1] [S999]"}]}]}}])
-    result = await ask_agent(repo=REPO, files=FILES, chunks=CHUNKS, question="如何安装", config={"key": "fake", "base": "https://provider.test/v1", "model": "gpt-6.1-sol", "effort": "high"}, on_event=events.append, transport=httpx.MockTransport(handler))
+    result = await ask_agent(repo=REPO, files=FILES, chunks=CHUNKS, question="如何安装", config={"key": "fake", "base": "https://provider.test/v1", "model": model, "effort": "high"}, on_event=events.append, transport=httpx.MockTransport(handler))
     assert len(requests) == 2
     assert result["answer"] == "安装 [S1] [引用无效]"
     assert any(e["type"] == "delta" for e in events)
@@ -87,3 +89,41 @@ async def test_chat_completions_json_fallback():
         return httpx.Response(200, json={"choices": [{"message": {"content": "启动 [S1]"}, "finish_reason": "stop"}]})
     result = await ask_agent(repo=REPO, files=FILES, chunks=CHUNKS, question="安装", config={"key": "fake", "base": "https://provider.test/v1", "model": "gpt-4.1-mini"}, transport=httpx.MockTransport(handler))
     assert result["answer"] == "启动 [S1]"
+
+
+
+@pytest.mark.parametrize("dedicated", [False, True])
+async def test_deepseek_flash_stream_replays_reasoning_for_tool_round(dedicated):
+    events, requests = [], []
+    base = {"key": "gateway-test-key", "base": "https://gateway.test/v1", "model": "gpt-5.4-mini"}
+    if dedicated:
+        base["deepseek_key"] = "deepseek-test-key"
+    config = select_model("deepseek-flash", "high", base=base)
+
+    def handler(request):
+        assert request.url.host == ("api.deepseek.com" if dedicated else "gateway.test")
+        assert request.headers["Authorization"] == ("Bearer deepseek-test-key" if dedicated else "Bearer gateway-test-key")
+        assert request.url.path.endswith("/chat/completions")
+        body = json.loads(request.content)
+        assert body["model"] == "deepseek-flash"
+        assert body["reasoning_effort"] == "high"
+        assert body["max_tokens"] == 16000
+        assert "max_completion_tokens" not in body
+        requests.append(body)
+        if len(requests) == 1:
+            return sse_response([
+                {"choices": [{"delta": {"reasoning_content": "internal ", "tool_calls": None}}]},
+                {"choices": [{"delta": {"reasoning_content": "reasoning"}}]},
+                {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "c1",
+                  "function": {"name": "list_files", "arguments": "{}"}}]},
+                  "finish_reason": "tool_calls"}]},
+            ])
+        assert body["messages"][-2]["reasoning_content"] == "internal reasoning"
+        assert body["messages"][-1]["tool_call_id"] == "c1"
+        return sse_response([{"choices": [{"delta": {"content": "安装 [S1]"}, "finish_reason": "stop"}]}])
+
+    result = await ask_agent(repo=REPO, files=FILES, chunks=CHUNKS, question="安装",
+                             config=config, on_event=events.append, transport=httpx.MockTransport(handler))
+    assert len(requests) == 2
+    assert result["answer"] == "安装 [S1]"
+    assert "internal reasoning" not in json.dumps([result, events])

@@ -7,7 +7,7 @@
 - 按固定 commit 导入公开 GitHub 仓库，优先 README、入口代码和贡献指南；默认最多 1,000 个文本文件、合计 50 MB，每个不超过 80 KB；数量可配置至 5,000 个，显示部分索引提示。
 - BM25 + 本地多语言向量混合检索，RRF 排名融合；支持索引建立、过期检查、持久化和 BM25 回退。Agent 首次检索与补充搜索统一使用所选方式，最多 4 轮只读工具调用。参见 [第五轮扩展说明](docs/upgrade-05.md)。
 - Responses / Chat Completions 兼容接口，真实 SSE 流式输出、停止生成、引用核验与安全 Markdown 渲染。
-- GPT-5.6、6、6.1 的 sol / astra / luna / terra 预设、思考强度、模型发现及手动输入。预设不保证账号或服务商支持，以实际接口返回为准。
+- 内置 GPT-6.2 Sol、GPT-6.2 Astra、DeepSeek V4.1 Flash 和旧版 GPT 预设，支持思考强度、模型发现及手动输入。账号可用性由服务商决定。
 - 源码阅读器、引用行高亮、文件内搜索、行号跳转、复制。
 - 可折叠目录树、路径筛选与独立代码搜索，支持关键词和相关片段两种模式；无需调用模型。参见 [第二轮扩展说明](docs/upgrade-02.md)。
 - 多会话创建与搜索；每条会话右侧菜单支持置顶、取消置顶、重命名和删除；重新生成最后一条回答与导出当前会话。
@@ -38,6 +38,8 @@ python -m venv .venv
 ```
 
 访问 <http://127.0.0.1:3211>。默认仅监听本机。环境变量优先于 `.env`，API Key 只在服务端使用。
+
+GPT-6.2 使用现有的 `OPENAI_API_KEY` 与 `LLM_BASE_URL`，通过 Responses API 调用。DeepSeek V4.1 Flash 的模型 ID 是 `deepseek-flash`。设置 `DEEPSEEK_API_KEY` 后，该模型会走 DeepSeek 官方接口，其余模型仍走现有服务商。若现有网关已支持 `deepseek-flash`，可直接使用网关配置。Docker 部署修改密钥后需重新创建容器。
 
 ## Docker
 
