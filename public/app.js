@@ -34,16 +34,18 @@ async function api(path, body) {
 function toast(message) { $('toast').textContent = message; $('toast').classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.add('hidden'), 9000); }
 function setBusy(value) {
   busy = value;
+  if (value) setModelMenu(false);
   discovery.setBusy(value);
   learning.setBusy(value);
   sectionsUI.setBusy(value);
   sidebarUI.setBusy(value);
   $('use-learning').disabled=value;
   retrieval.setBusy(value);
-  for (const node of document.querySelectorAll('button, #repo-url, #mode, #model-choice, #custom-model, #effort-choice')) {
+  for (const node of document.querySelectorAll('button, #repo-url, #model-choice, #custom-model, #effort-choice')) {
     if (node.closest('.code-reader, #sources, .repository-browser, #checklist-panel, #discover, #retrieval-panel, #learning, .learning-dialog, .sections-dialog, #repo-list, .sidebar-menu') || node.matches('.citation, .file-item')) continue;
     node.disabled = value;
   }
+  $('send-button').classList.toggle('hidden', !!chatController);
   $('stop-button').disabled = !chatController;
   $('stop-button').classList.toggle('hidden', !chatController);
   sessionUI.setBusy(value); $('session-search').disabled=value;
@@ -217,17 +219,18 @@ async function importRepository(url, reuseExisting = false, sync = false) {
 }
 async function submitQuestion(question, regenerateId) {
   if (!active || busy || !question.trim()) return;
-  if ($('mode').value === 'agent' && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(selectedModel())) { toast('请选择模型或输入有效的模型 ID。'); return; }
+  if (!modelConfigured) { toast('请先配置模型 API Key，再发送问题。'); return; }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(selectedModel())) { toast('请选择模型或输入有效的模型 ID。'); return; }
   chatController = new AbortController();
   setBusy(true); $('send-button').textContent = '生成中…'; $('toast').classList.add('hidden');
   $('messages').querySelector('.empty-chat')?.remove();
-  const item = { question, repoSha:active.sha, indexVersion:active.indexVersion, answer: '', sources: [], trace: [], mode: $('mode').value, model: selectedModel(), effort: $('effort-choice').value };
+  const item = { question, repoSha:active.sha, indexVersion:active.indexVersion, answer: '', sources: [], trace: [], mode: 'agent', model: selectedModel(), effort: $('effort-choice').value };
   const view = addMessage(item);
   view.content.textContent = '正在检索代码…';
   let completed = false; let frame;
   const paint = () => { frame = null; renderAnswer(view.content, item.answer, item.sources, item.mode === 'agent'); $('messages').scrollTop = $('messages').scrollHeight; };
   try {
-    const response = await fetch('/api/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: active.id, sessionId:currentSession.id, regenerateId, question, mode: item.mode, model: item.model, effort: item.effort, retrieval: $('retrieval-mode').value, useLearning:$('use-learning').checked }), signal: chatController.signal });
+    const response = await fetch('/api/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: active.id, sessionId:currentSession.id, regenerateId, question, model: item.model, effort: item.effort, retrieval: $('retrieval-mode').value, useLearning:$('use-learning').checked }), signal: chatController.signal });
     if (!response.ok) { const error = await response.json(); throw Error(error.error || '请求失败'); }
     for await (const message of readSSE(response.body)) {
       const event = JSON.parse(message.data);
@@ -278,7 +281,7 @@ function renderModelChoices(selected = selectedModel()) {
   if (!isListedModel(selected)) selected = models[0]?.id || '';
   const options = [];
   for (const model of models) {
-    const option = el('option', '', model.label); option.value = model.id;
+    const option = el('option', '', model.id === 'deepseek-flash' ? 'DeepSeek-V4.1-Flash' : model.label.split(' · ')[0]); option.value = model.id;
     options.push(option);
   }
   const custom = el('option', '', '自定义模型 ID…'); custom.value = '__custom__';
@@ -293,12 +296,16 @@ function updateEfforts(reset = true) {
   const labels = { default: '模型默认', none: '不启用推理', low: '低', medium: '中 · 推荐', high: '高', xhigh: '极高', max: '最高', ultra: '超高' };
   $('effort-choice').replaceChildren(...['default', ...(spec?.efforts || [])].map(v => { const o = el('option', '', labels[v]); o.value = v; return o; }));
   $('effort-choice').value = [...$('effort-choice').options].some(o => o.value === previous) ? previous : 'default';
-  const extraction = $('mode').value === 'extractive';
-  $('model-choice').disabled = busy || extraction;
+  $('model-choice').disabled = busy;
   $('custom-model-label').classList.toggle('hidden', $('model-choice').value !== '__custom__');
-  $('custom-model').disabled = busy || extraction;
-  $('effort-choice').disabled = busy || extraction || !spec?.efforts.length;
-  $('model-status').textContent = modelConfigured ? (extraction ? '● 检索模式 · 不调用生成模型' : `● 当前模型 · ${model || '请输入模型 ID'}`) : '● 检索模式 · 无需 API Key';
+  $('custom-model').disabled = busy;
+  $('effort-choice').disabled = busy || !spec?.efforts.length;
+  const name = model === 'deepseek-flash' ? 'DeepSeek-V4.1-Flash' : model || '自定义模型';
+  const effort = $('effort-choice').value;
+  $('model-name').textContent = name;
+  $('effort-name').textContent = effort === 'default' ? '默认' : effort.charAt(0).toUpperCase() + effort.slice(1);
+  $('model-toggle').setAttribute('aria-label', '选择模型与推理等级，' + name + '，' + $('effort-name').textContent);
+  $('model-status').textContent = modelConfigured ? '● 当前模型 · ' + name : '请配置模型 API Key';
   try { if (model) localStorage.setItem('repopilot-model', model); localStorage.setItem('repopilot-effort', $('effort-choice').value); } catch {}
 }
 $('model-choice').onchange = () => updateEfforts();
@@ -313,12 +320,29 @@ async function refreshModels(quiet = false) {
     const data = await api('/api/models');
     modelCatalog = [...data.models, ...modelCatalog.filter(m => !data.models.some(p => p.id === m.id))];
     renderModelChoices();
-    $('model-hint').textContent = `接口返回 ${data.models.length} 个模型。按时间从新到旧：优先版本或发布日期，其余用接口创建时间；无时间预设置底并按版本倒序，需服务商支持。`;
+
   } catch (error) { if (!quiet) toast(error.message); } finally { setBusy(false); }
 }
 $('refresh-models').onclick = () => refreshModels();
 $('effort-choice').onchange = () => updateEfforts(false);
-$('mode').onchange = () => updateEfforts(false);
+function setModelMenu(open, restoreFocus = false) {
+  $('model-panel').classList.toggle('hidden', !open);
+  $('model-toggle').setAttribute('aria-expanded', String(open));
+  if (open) $('model-choice').focus();
+  else if (restoreFocus) $('model-toggle').focus();
+}
+$('model-toggle').onclick = () => setModelMenu($('model-panel').classList.contains('hidden'));
+document.addEventListener('pointerdown', event => {
+  if (!event.target.closest('#model-panel, #model-toggle')) setModelMenu(false);
+});
+document.addEventListener('focusin', event => {
+  if (!event.target.closest('#model-panel, #model-toggle')) setModelMenu(false);
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !$('model-panel').classList.contains('hidden')) {
+    setModelMenu(false, true);
+  }
+});
 async function init() {
   try {
     const status = await api('/api/status'); modelConfigured = status.modelConfigured;
@@ -328,7 +352,6 @@ async function init() {
       $('import-limits').textContent = caption;
       $('discover-import-limits').textContent = `导入${caption}`;
     }
-    if (!status.modelConfigured) { $('mode').value = 'extractive'; $('mode').querySelector('[value="agent"]').disabled = true; }
     modelCatalog = status.models;
     let savedModel, savedEffort;
     try { savedModel = localStorage.getItem('repopilot-model'); savedEffort = localStorage.getItem('repopilot-effort'); } catch {}

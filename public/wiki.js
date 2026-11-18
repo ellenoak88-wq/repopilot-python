@@ -95,7 +95,7 @@ export function createWiki({api, openFile}) {
     const page = edition.pages[key];
     const content = page.facts.map(f => f.text + ' ' + f.sources.map(id => '[' + id + ']').join(' ')).join('\n\n');
     const info = page.engine ? 'Agent 提炼 · ' + page.engine : '本地源码导览';
-    const entry = section({question:info + ' · 修订 ' + page.revision, content, mode:page.engine ? 'agent' : 'extractive',
+    const entry = section({question:info + ' · 修订 ' + page.revision, content, mode:page.engine ? 'agent' : null,
       sources:page.sources, indexVersion:edition.version, repoSha:page.sha}, edition.currentVersion);
     const related = element('div', undefined, 'wiki-list');
     if (page.related.length) related.append(element('h3', '关联专题'));
