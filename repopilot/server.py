@@ -22,6 +22,7 @@ from .explorer import search_files, validate_search
 from .github import import_github, import_limits, parse_repo
 from .models import MODEL_OPTIONS, discover_models, model_config, select_model
 from .store import Store, now
+from .wiki import Wiki, WikiConflict
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = json.loads((Path(__file__).parent / "demo.json").read_text(encoding="utf-8"))
@@ -95,6 +96,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
     store = store or Store(Path(os.getenv("DATA_DIR", str(ROOT / "data"))) / "repopilot.db")
     checklists = ChecklistService(store)
     learning = LearningService(store)
+    wiki = Wiki(store)
     sections = learning.sections
     discovery = DiscoveryService(store, transport=discovery_transport)
     hybrid = HybridRetrieval(store, embedder or make_embedder(os.getenv("DATA_DIR", str(ROOT / "data"))))
@@ -127,7 +129,8 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
         raw = bytearray()
         async for part in request.stream():
             raw.extend(part)
-            if len(raw) > (40000 if request.url.path.startswith("/api/learning/") else 20000):
+            if len(raw) > (64000 if request.url.path.startswith("/api/wiki/") else
+                           40000 if request.url.path.startswith("/api/learning/") else 20000):
                 raise ApiError(413, "请求过大。")
         try:
             body = json.loads(raw or b"{}")
@@ -294,6 +297,10 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                         raise ApiError(400, "刷新参数无效。")
                     return await discovery.get(source=q.get("source", "trending"), language=q.get("language", ""),
                                                since=q.get("since", "daily"), topic=q.get("topic", ""), refresh=q.get("refresh") == "1")
+                if path == "/api/wiki":
+                    return wiki.pages(get_repo(q.get("repo"))["id"])
+                if path == "/api/wiki/detail":
+                    return wiki.detail(get_repo(q.get("repo")), q.get("id"))
                 if path == "/api/learning/export":
                     return Response(learning.export(), media_type="text/markdown; charset=utf-8",
                                     headers={"Content-Disposition": 'attachment; filename="learning-history.md"'})
@@ -337,7 +344,8 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     file = store.file(repo["id"], q.get("path", ""))
                     if not file:
                         raise ApiError(404, "该文件不在当前仓库索引中。")
-                    return {**file, "sha": repo["sha"], "demo": repo.get("demo", False), "lines": len(file["content"].split("\n"))}
+                    return {**file, "sha": repo["sha"], "indexVersion": repo["indexVersion"],
+                            "demo": repo.get("demo", False), "lines": len(file["content"].split("\n"))}
                 if path.startswith("/api/jobs/"):
                     job = jobs.get(path.rsplit("/", 1)[-1])
                     if not job:
@@ -356,6 +364,13 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return store.sessions(repo["id"], q.get("q", "")[:200])
             else:
                 body = await body_json(request)
+                if path == "/api/wiki/draft":
+                    return wiki.draft(get_repo(body.get("repo")), body.get("chatId"))
+                if path in ("/api/wiki/create", "/api/wiki/merge"):
+                    idle()
+                    merge = path.endswith("/merge")
+                    saved = wiki.save(get_repo(body.get("repo")), body, merge=merge)
+                    return JSONResponse(saved, status_code=200 if merge else 201)
                 if path in ("/api/repos/pin", "/api/repos/delete"):
                     idle()
                     repo = get_repo(body.get("repo"))
@@ -451,7 +466,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             return JSONResponse({"error": e.message}, status_code=e.status)
         except DiscoveryUnavailable as e:
             return JSONResponse({"error": str(e)}, status_code=503)
-        except (ChecklistConflict, LearningConflict, SectionConflict) as e:
+        except (ChecklistConflict, LearningConflict, SectionConflict, WikiConflict) as e:
             return JSONResponse({"error": str(e)}, status_code=409)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
