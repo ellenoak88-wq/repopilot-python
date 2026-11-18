@@ -55,7 +55,7 @@ class SectionService:
                 raise SectionConflict('项目索引已变化，请刷新后重新确认删除。')
             # Personal learning records are independent; missing sources become stale.
             for table in ('files','chats','sessions','repo_sections','repo_preferences','checklists','vector_indexes',
-                          'wiki_entries','wiki_pages'):
+                          'wiki_entries','wiki_pages','wiki_editions','wiki_focus'):
                 if self.store._one("SELECT name FROM sqlite_master WHERE type='table' AND name=?",(table,)):
                     self.store.db.execute(f'DELETE FROM {table} WHERE repo=?',(repo['id'],))
             self.store.db.execute('DELETE FROM repositories WHERE id=?',(repo['id'],))

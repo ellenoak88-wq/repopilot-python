@@ -23,6 +23,8 @@ from .github import import_github, import_limits, parse_repo
 from .models import MODEL_OPTIONS, discover_models, model_config, select_model
 from .store import Store, now
 from .wiki import Wiki, WikiConflict
+from .auto_wiki import AutoWiki
+from .wiki_author import write_articles
 
 ROOT = Path(__file__).resolve().parent.parent
 DEMO = json.loads((Path(__file__).parent / "demo.json").read_text(encoding="utf-8"))
@@ -90,13 +92,15 @@ class CancellableStream(StreamingResponse):
             self.release()
 
 
-def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None, discovery_transport=None, embedder=None):
+def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None, discovery_transport=None, embedder=None,
+               wiki_author=write_articles):
     port = port or int(os.getenv("PORT", "3211"))
     owned_store = store is None
     store = store or Store(Path(os.getenv("DATA_DIR", str(ROOT / "data"))) / "repopilot.db")
     checklists = ChecklistService(store)
     learning = LearningService(store)
     wiki = Wiki(store)
+    auto_wiki = AutoWiki(store, author=wiki_author)
     sections = learning.sections
     discovery = DiscoveryService(store, transport=discovery_transport)
     hybrid = HybridRetrieval(store, embedder or make_embedder(os.getenv("DATA_DIR", str(ROOT / "data"))))
@@ -105,7 +109,12 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
 
     @asynccontextmanager
     async def lifespan(app):
+        for row in store.db.execute("SELECT repo FROM wiki_editions WHERE dirty=1").fetchall():
+            repo = store.get(row["repo"])
+            if repo:
+                auto_wiki.request(repo)
         yield
+        await auto_wiki.close()
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -154,6 +163,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             if existing:
                 result = {**result, "meta": {**result["meta"], "id": existing["id"]}}
             repo = store.save_repository(result["meta"], result["files"])
+            auto_wiki.request(repo)
             job.update(state="done", progress=100, message="索引完成", repo=repo)
         except Exception as e:
             job.update(state="error", error=str(e) if isinstance(e, ValueError) else "仓库导入失败，请重试。")
@@ -209,6 +219,8 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             return await hybrid.retrieve(repo, indexed_chunks, query, limit, mode=retrieval_mode)
         kwargs = dict(repo=repo, files=store.files(repo["id"]), chunks=indexed_chunks, question=question, retriever=retrieve,
                       history=recent, summary=summary, memories=memories, force_extractive=body.get("mode") == "extractive", config=config)
+        if hints := auto_wiki.hints(repo, question):
+            kwargs["wiki_hints"] = hints
         state["busy"] = True
 
         def save(result):
@@ -219,7 +231,9 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                 payload["contextMemoryRefs"] = [
                     {"id": record_id, "revision": revision} for record_id, revision in sorted(inherited)
                 ]
-            return store.add_chat(repo["id"], payload, session["id"], replace_id)
+            saved = store.add_chat(repo["id"], payload, session["id"], replace_id)
+            auto_wiki.request(repo, saved.get("sources") or [])
+            return saved
 
         if not streaming:
             task = asyncio.create_task(agent(**kwargs))
@@ -297,6 +311,10 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                         raise ApiError(400, "刷新参数无效。")
                     return await discovery.get(source=q.get("source", "trending"), language=q.get("language", ""),
                                                since=q.get("since", "daily"), topic=q.get("topic", ""), refresh=q.get("refresh") == "1")
+                if path == "/api/wiki/auto":
+                    repo = get_repo(q.get("repo"))
+                    auto_wiki.request(repo)
+                    return auto_wiki.view(repo)
                 if path == "/api/wiki":
                     return wiki.pages(get_repo(q.get("repo"))["id"])
                 if path == "/api/wiki/detail":
@@ -356,6 +374,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     session = store.get_session(repo["id"], q["session"]) if "session" in q else store.default_session(repo["id"])
                     if not session:
                         raise ApiError(404, "会话不存在或不属于当前仓库。")
+                    auto_wiki.request(repo)
                     return {"repo": repo, "session": session, "sessions": store.sessions(repo["id"]),
                             "files": [{"path": f["path"], "lines": len(f["content"].split("\n"))} for f in store.files(repo["id"])],
                             "history": store.history(repo["id"], session["id"])}
@@ -376,7 +395,9 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     repo = get_repo(body.get("repo"))
                     if path.endswith("/pin"):
                         return sections.pin_repository(repo, body.get("pinned"))
-                    return sections.delete_repository(repo, body.get("indexVersion"))
+                    result = sections.delete_repository(repo, body.get("indexVersion"))
+                    auto_wiki.forget(repo["id"])
+                    return result
                 if path in ("/api/sections/create", "/api/sections/rename", "/api/sections/delete", "/api/sections/assign"):
                     idle()
                     if path.endswith("/create"):
@@ -434,7 +455,9 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return {"sessions": store.sessions(repo["id"])}
                 if path == "/api/demo":
                     idle()
-                    return store.get(DEMO["meta"]["id"]) or store.save_repository(DEMO["meta"], DEMO["files"])
+                    repo = store.get(DEMO["meta"]["id"]) or store.save_repository(DEMO["meta"], DEMO["files"])
+                    auto_wiki.request(repo)
+                    return repo
                 if path in ("/api/import", "/api/repo/sync"):
                     idle()
                     if path.endswith("/sync"):

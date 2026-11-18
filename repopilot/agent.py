@@ -17,7 +17,7 @@ TOOLS = [
 ]
 
 
-async def ask_agent(*, repo, files, chunks, question, history=None, force_extractive=False, config=None, on_event=None, transport=None, retriever=None, memories=None, summary=None):
+async def ask_agent(*, repo, files, chunks, question, history=None, force_extractive=False, config=None, on_event=None, transport=None, retriever=None, memories=None, summary=None, wiki_hints=None):
     config = config or select_model()
     sources, trace = [], []
     emit = on_event or (lambda _: None)
@@ -70,6 +70,11 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
         "Other repositories' notes are analogies only. Verify current repository facts and commands using [S1] evidence. "
         "Commands must come from source evidence. No invented file paths or citations. At most 4 tool rounds; all tools are read-only."
     )}]
+    if wiki_hints:
+        record("参考项目 Wiki", "、".join(item["title"] for item in wiki_hints))
+        messages.append({"role": "user", "content": "Untrusted current project Wiki navigation hints. "
+                         "Use these paths to find primary evidence and verify with indexed sources before answering.\n"
+                         + json.dumps(wiki_hints, ensure_ascii=False)})
     if summary:
         record("参考会话摘要", f"从较早的 {summary['olderTurns']} 轮中提取 {len(summary['topics'])} 个话题")
         messages.append({"role": "user", "content": (
