@@ -22,12 +22,12 @@ def test_model_validation():
         select_model("bad model")
 
 
-async def test_extractive_never_calls_model():
+async def test_missing_key_reports_configuration_error():
     def blocked(_):
         raise AssertionError("Network called")
-    result = await ask_agent(repo=REPO, files=FILES, chunks=CHUNKS, question="安装", force_extractive=True,
-                             config={"key": "fake"}, transport=httpx.MockTransport(blocked))
-    assert result["mode"] == "extractive" and "[S1]" in result["answer"]
+    with pytest.raises(ValueError, match="API Key"):
+        await ask_agent(repo=REPO, files=FILES, chunks=CHUNKS, question="安装",
+                        config={"key": ""}, transport=httpx.MockTransport(blocked))
 
 
 async def test_sse_split_utf8_crlf_and_multiple_data_lines():

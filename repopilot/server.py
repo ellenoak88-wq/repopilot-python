@@ -199,6 +199,8 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             question = body.get("question")
         if not isinstance(question, str) or not question.strip() or len(question) > 2000:
             raise ApiError(400, "请输入 1–2000 字的问题。")
+        if body.get("mode", "agent") != "agent":
+            raise ApiError(400, "当前仅支持模型问答，请更新客户端后重试。")
         retrieval_mode = body.get("retrieval", "hybrid")
         if retrieval_mode not in ("hybrid", "bm25"):
             raise ApiError(400, "检索方式无效。")
@@ -218,7 +220,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
         async def retrieve(query, limit):
             return await hybrid.retrieve(repo, indexed_chunks, query, limit, mode=retrieval_mode)
         kwargs = dict(repo=repo, files=store.files(repo["id"]), chunks=indexed_chunks, question=question, retriever=retrieve,
-                      history=recent, summary=summary, memories=memories, force_extractive=body.get("mode") == "extractive", config=config)
+                      history=recent, summary=summary, memories=memories, config=config)
         if hints := auto_wiki.hints(repo, question):
             kwargs["wiki_hints"] = hints
         state["busy"] = True

@@ -19,8 +19,8 @@ def store():
     s.close()
 
 
-async def test_api_reader_sessions_and_stream(store):
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(store=store, port=3211)), base_url=BASE) as c:
+async def test_api_reader_sessions_and_stream(store, offline_agent):
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(store=store, agent=offline_agent, port=3211)), base_url=BASE) as c:
         assert (await c.get("/api/health")).json() == {"status": "ok"}
         assert (await c.get("/api/status")).json()["backend"] == "python"
         assert (await c.get("/app.js")).headers["content-type"].startswith("text/javascript")
@@ -29,7 +29,7 @@ async def test_api_reader_sessions_and_stream(store):
         assert reader.json()["lines"] == 18
         assert (await c.get("/api/file", params={"repo": REPO, "path": "../../.env"})).status_code == 404
         session = (await c.post("/api/sessions/create", json={"repo": REPO, "title": "测试会话"})).json()
-        payload = {"repo": REPO, "sessionId": session["id"], "question": "安装启动", "mode": "extractive"}
+        payload = {"repo": REPO, "sessionId": session["id"], "question": "安装启动"}
         stream = await c.post("/api/chat/stream", json=payload)
         events = [json.loads(s[6:]) for s in stream.text.split("\n\n") if s.startswith("data: ")]
         assert events[-1]["type"] == "done"
@@ -52,8 +52,8 @@ async def test_validation_and_security(store):
         assert (await c.post("/api/demo", json=[])).status_code == 400
         assert (await c.post("/api/demo", content="{", headers={"content-type": "application/json"})).status_code == 400
         assert (await c.post("/api/demo", json={"x": "a" * 20001})).status_code == 413
-        for field in [{"question": ""}, {"sessionId": []}, {"model": []}, {"effort": {}}, {"regenerateId": True}]:
-            result = await c.post("/api/chat", json={"repo": REPO, "question": "test", "mode": "extractive", **field})
+        for field in [{"question": ""}, {"sessionId": []}, {"model": []}, {"effort": {}}, {"regenerateId": True}, {"mode": "extractive"}]:
+            result = await c.post("/api/chat", json={"repo": REPO, "question": "test", **field})
             assert result.status_code in (400, 404), result.text
 
 

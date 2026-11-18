@@ -93,7 +93,7 @@ async def test_api_chat_toggle_export_and_snapshot(state):
     seen=[]
     async def agent(**kwargs):
         seen.append(kwargs['memories'])
-        return dict(answer='回答',sources=[],trace=[],mode='extractive')
+        return dict(answer='回答',sources=[],trace=[],mode='agent')
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(store=store,agent=agent)),base_url='http://127.0.0.1:3211') as c:
         response=await c.post('/api/chat',json={'repo':b['id'],'question':'pytest'})
         assert response.status_code==200
@@ -131,8 +131,6 @@ async def test_agent_learning_separated_from_source_and_invalid_citations(state)
     assert '[M1]' in result['answer'] and '[M99]' not in result['answer']
     assert '[档案引用无效]' in result['answer']
     assert any(t['label']=='参考学习档案' for t in result['trace'])
-    result=await ask_agent(repo=b,files=FILES,chunks=store.chunks(b['id']),question='pytest',memories=memories,config={'key':''})
-    assert result['mode']=='extractive' and '不作为当前仓库事实依据' in result['answer']
 
 
 def test_persistent_learning_survives_reopen_and_source_sync(tmp_path):

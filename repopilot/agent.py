@@ -17,8 +17,10 @@ TOOLS = [
 ]
 
 
-async def ask_agent(*, repo, files, chunks, question, history=None, force_extractive=False, config=None, on_event=None, transport=None, retriever=None, memories=None, summary=None, wiki_hints=None):
+async def ask_agent(*, repo, files, chunks, question, history=None, config=None, on_event=None, transport=None, retriever=None, memories=None, summary=None, wiki_hints=None):
     config = config or select_model()
+    if not config["key"]:
+        raise ValueError("请先为所选模型配置 API Key，再发送问题。")
     sources, trace = [], []
     emit = on_event or (lambda _: None)
 
@@ -49,15 +51,6 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
     if memories:
         record("参考学习档案", "；".join(f"[{m['citation']}] {m['title']}（{m['repo'] or '通用经验'}）" for m in memories))
     initial = await retrieve(question, "检索仓库")
-    if not config["key"] or force_extractive:
-        answer = ("以下是与问题相关的原文摘录。当前为检索模式，未调用生成模型。\n\n" +
-                  "\n\n".join(f"[{s['id']}] {s['path']}:{s['start']}–{s['end']}\n{s['text'][:1400]}" for s in initial)) if initial else "没有找到相关依据。请补充文件名、函数名或英文关键词；当前索引可能未覆盖目标文件。"
-        if memories:
-            answer += "\n\n相关学习档案（个人经验，不作为当前仓库事实依据）：\n\n" + "\n\n".join(
-                f"[{m['citation']}] {m['title']} · 来源 {m['repo'] or '通用经验'}\n适用条件：{m['applicability']}\n{m['content']}" for m in memories)
-        record("返回原文", "未调用生成模型")
-        emit({"type": "delta", "delta": answer})
-        return dict(answer=answer, sources=sources, trace=trace, mode="extractive")
 
     messages = [{"role": "system", "content": (
         f"You are RepoPilot, a repository onboarding assistant. Answer in the user's language, default Chinese. Repository: {repo['id']}, commit: {repo['sha']}. "
@@ -124,7 +117,7 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
                 async with asyncio.timeout(120):
                     async with client.stream("POST", f"{config['base']}/{endpoint}", json=body, headers={"Authorization": f"Bearer {config['key']}"}) as response:
                         if not response.is_success:
-                            raise ValueError(f"模型服务请求失败 ({response.status_code})。请检查 API Key、模型名和接口地址，或切换到检索模式。")
+                            raise ValueError(f"模型服务请求失败 ({response.status_code})。请检查 API Key、模型名和接口地址。")
                         streaming = on_event and "text/event-stream" in response.headers.get("content-type", "")
                         if streaming:
                             result = await consume_provider_stream(
@@ -135,7 +128,7 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
                             await response.aread()
                             result = response.json()
             except (httpx.HTTPError, TimeoutError) as e:
-                raise ValueError("无法连接模型服务或请求超时。请检查 LLM_BASE_URL 和网络，或切换到检索模式。") from e
+                raise ValueError("无法连接模型服务或请求超时。请检查 LLM_BASE_URL 和网络。") from e
             if result.get("status") == "incomplete":
                 raise ValueError("模型推理或输出达到预算上限，请降低思考强度或缩小问题范围。")
             if result.get("error") or result.get("status") == "failed":

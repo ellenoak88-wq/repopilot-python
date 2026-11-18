@@ -140,9 +140,9 @@ async def test_changed_repository_during_build_is_rejected(state):
     assert service.status(store.get(repo['id']))['state'] == 'missing'
 
 
-async def test_hybrid_routes_job_search_and_chat_citations(state):
+async def test_hybrid_routes_job_search_and_chat_citations(state, offline_agent):
     store, repo, embedder, _ = state
-    app = create_app(store=store, embedder=embedder)
+    app = create_app(store=store, embedder=embedder, agent=offline_agent)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://127.0.0.1:3211') as client:
         assert (await client.get('/api/retrieval/status',params={'repo':repo['id']})).json()['state'] == 'missing'
         job = (await client.post('/api/retrieval/build',json={'repo':repo['id']})).json()
@@ -151,7 +151,7 @@ async def test_hybrid_routes_job_search_and_chat_citations(state):
         response = await client.get('/api/search',params={'repo':repo['id'],'q':'怎样让服务可用','mode':'hybrid'})
         result = response.json()
         assert result['retrieval']['actual'] == 'hybrid' and result['results'][0]['preview'][0]['number'] == 1
-        answer = (await client.post('/api/chat',json={'repo':repo['id'],'question':'怎样让服务可用','mode':'extractive','retrieval':'hybrid'})).json()
+        answer = (await client.post('/api/chat',json={'repo':repo['id'],'question':'怎样让服务可用','retrieval':'hybrid'})).json()
         assert answer['sources'][0]['path'] == 'README.md' and 'RRF' in answer['trace'][0]['detail']
         for params in ({'q':''},{'q':'test','mode':'bad'},{'q':'test','limit':'0'}):
             assert (await client.get('/api/search',params={'repo':repo['id'],**params})).status_code == 400

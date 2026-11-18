@@ -64,7 +64,7 @@ async def test_old_context_not_used_and_cannot_regenerate():
     store.save_repository({**META,'sha':'new'},FILES)
     async def agent(**kwargs):
         assert kwargs['history'] == []
-        return dict(answer='new',sources=[],trace=[],mode='extractive')
+        return dict(answer='new',sources=[],trace=[],mode='agent')
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(store=store,agent=agent)),base_url='http://127.0.0.1:3211') as client:
         response=await client.post('/api/chat',json={'repo':META['id'],'regenerateId':old['id']})
         assert response.status_code == 409
