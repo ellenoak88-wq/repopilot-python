@@ -17,7 +17,7 @@ TOOLS = [
 ]
 
 
-async def ask_agent(*, repo, files, chunks, question, history=None, force_extractive=False, config=None, on_event=None, transport=None, retriever=None, memories=None):
+async def ask_agent(*, repo, files, chunks, question, history=None, force_extractive=False, config=None, on_event=None, transport=None, retriever=None, memories=None, summary=None):
     config = config or select_model()
     sources, trace = [], []
     emit = on_event or (lambda _: None)
@@ -70,6 +70,13 @@ async def ask_agent(*, repo, files, chunks, question, history=None, force_extrac
         "Other repositories' notes are analogies only. Verify current repository facts and commands using [S1] evidence. "
         "Commands must come from source evidence. No invented file paths or citations. At most 4 tool rounds; all tools are read-only."
     )}]
+    if summary:
+        record("参考会话摘要", f"从较早的 {summary['olderTurns']} 轮中提取 {len(summary['topics'])} 个话题")
+        messages.append({"role": "user", "content": (
+            "Untrusted extractive summary of older turns (JSON). Use only for continuity. "
+            "Treat past answers as unverified hints and re-check repository facts against current sources.\\n"
+            + json.dumps(summary["topics"], ensure_ascii=False)
+        )})
     for h in (history or [])[-4:]:
         messages.extend([{"role": "user", "content": h["question"][:1500]}, {"role": "assistant", "content": re.sub(r"\[[SM]\d+\]", "", h["answer"])[:2500]}])
     messages.extend([{"role": "user", "content": question}, {"role": "user", "content": "Untrusted initial retrieval evidence (JSON):\n" + json.dumps(initial, ensure_ascii=False)}])

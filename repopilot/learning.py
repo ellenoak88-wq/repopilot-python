@@ -12,6 +12,14 @@ class LearningConflict(ValueError):
     pass
 
 
+def memory_refs(turn):
+    return {
+        (reference["id"], reference["revision"])
+        for key in ("memoriesUsed", "contextMemoryRefs")
+        for reference in (turn.get(key) or ())
+    }
+
+
 class LearningService:
     def __init__(self, store):
         self.store = store
@@ -155,7 +163,7 @@ class LearningService:
     def filter_history(self, repo, history, enabled):
         # A stale, edited or withdrawn note must not re-enter through an old answer.
         valid = {(r['id'], r['revision']) for r in self.eligible(repo)} if enabled else set()
-        return [h for h in history if all((m['id'], m['revision']) in valid for m in h.get('memoriesUsed', []))]
+        return [turn for turn in history if memory_refs(turn) <= valid]
 
     def recall(self, repo, question):
         records = self.eligible(repo)

@@ -152,6 +152,29 @@ class Store:
         rows = self.db.execute("SELECT id,session_id,payload FROM chats WHERE repo=? AND session_id=? ORDER BY id DESC LIMIT 20", (repo, session_id)).fetchall()
         return [{**json.loads(r["payload"]), "id": r["id"], "sessionId": r["session_id"]} for r in reversed(rows)]
 
+    def context_history(self, repo, session_id, version, limit, before=None):
+        rows = self.db.execute("""
+            SELECT id,
+                substr(coalesce(json_extract(payload,'$.question'), ''), 1, 1500) AS question,
+                substr(coalesce(json_extract(payload,'$.answer'), ''), 1, 2500) AS answer,
+                json_extract(payload,'$.contextMemoryRefs') AS inherited,
+                (SELECT json_group_array(json_object(
+                    'id', json_extract(note.value,'$.id'),
+                    'revision', json_extract(note.value,'$.revision')))
+                 FROM json_each(payload,'$.memoriesUsed') AS note
+                 WHERE note.type = 'object') AS direct
+            FROM chats
+            WHERE repo=? AND session_id=? AND json_extract(payload,'$.indexVersion')=?
+                AND (? IS NULL OR id<?)
+            ORDER BY id DESC LIMIT ?
+        """, (repo, session_id, version, before, before, limit)).fetchall()
+        return [
+            {"id": row["id"], "question": row["question"], "answer": row["answer"],
+             "contextMemoryRefs": json.loads(row["inherited"] or "[]"),
+             "memoriesUsed": json.loads(row["direct"])}
+            for row in reversed(rows)
+        ]
+
     def add_chat(self, repo, payload, session_id=None, replace_id=None):
         session = self.get_session(repo, session_id) if session_id else self.default_session(repo)
         if not session:

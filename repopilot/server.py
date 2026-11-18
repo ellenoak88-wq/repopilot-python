@@ -15,7 +15,8 @@ from .checklist import ChecklistConflict, ChecklistService
 from .discovery import DiscoveryService, DiscoveryUnavailable
 from .embeddings import make_embedder
 from .hybrid import HybridRetrieval
-from .learning import LearningService, LearningConflict
+from .learning import LearningService, LearningConflict, memory_refs
+from .conversation import HISTORY_LIMIT, RECENT_TURNS, summarize
 from .sections import SectionConflict
 from .explorer import search_files, validate_search
 from .github import import_github, import_limits, parse_repo
@@ -172,27 +173,31 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             store.get_session(repo["id"], body["sessionId"]) if isinstance(body["sessionId"], str) else None)
         if not session:
             raise ApiError(404, "会话不存在或不属于当前仓库。")
-        context = store.history(repo["id"], session["id"])
         replace_id = body.get("regenerateId")
         if "regenerateId" in body:
-            if type(replace_id) is not int or not context or context[-1]["id"] != replace_id:
+            previous = store.history(repo["id"], session["id"])
+            latest = previous[-1] if previous else None
+            if type(replace_id) is not int or not latest or latest["id"] != replace_id:
                 raise ApiError(400, "只能重新生成当前会话最后一条回答。")
-            if context[-1].get("indexVersion") != repo["indexVersion"]:
+            if latest.get("indexVersion") != repo["indexVersion"]:
                 raise ApiError(409, "这条回答属于旧索引，请重新提问以使用当前源码。")
-            question = context[-1]["question"]
-            context = context[:-1]
+            question = latest["question"]
         else:
             question = body.get("question")
         if not isinstance(question, str) or not question.strip() or len(question) > 2000:
             raise ApiError(400, "请输入 1–2000 字的问题。")
-        context = [h for h in context if h.get("indexVersion") == repo["indexVersion"]]
         retrieval_mode = body.get("retrieval", "hybrid")
         if retrieval_mode not in ("hybrid", "bm25"):
             raise ApiError(400, "检索方式无效。")
         if "useLearning" in body and type(body["useLearning"]) is not bool:
             raise ApiError(400, "学习档案开关必须为布尔值。")
         use_learning = body.get("useLearning", True)
+        context = store.context_history(repo["id"], session["id"], repo["indexVersion"],
+                                        HISTORY_LIMIT, before=replace_id)
         context = learning.filter_history(repo, context, use_learning)
+        summarized, summary = summarize(context[:-RECENT_TURNS], question)
+        recent = context[-RECENT_TURNS:]
+        inherited = set().union(*(memory_refs(turn) for turn in [*summarized, *recent]))
         memories = learning.recall(repo, question) if use_learning else []
         config = select_model(body.get("model"), body.get("effort"))
         indexed_chunks = store.chunks(repo["id"])
@@ -200,11 +205,18 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
         async def retrieve(query, limit):
             return await hybrid.retrieve(repo, indexed_chunks, query, limit, mode=retrieval_mode)
         kwargs = dict(repo=repo, files=store.files(repo["id"]), chunks=indexed_chunks, question=question, retriever=retrieve,
-                      history=context, memories=memories, force_extractive=body.get("mode") == "extractive", config=config)
+                      history=recent, summary=summary, memories=memories, force_extractive=body.get("mode") == "extractive", config=config)
         state["busy"] = True
 
         def save(result):
-            return store.add_chat(repo["id"], {"question": question, **result, "memoriesUsed": memories, "createdAt": now()}, session["id"], replace_id)
+            payload = {"question": question, **result, "memoriesUsed": memories, "createdAt": now()}
+            if summary:
+                payload["sessionSummary"] = summary
+            if inherited and result.get("mode") == "agent":
+                payload["contextMemoryRefs"] = [
+                    {"id": record_id, "revision": revision} for record_id, revision in sorted(inherited)
+                ]
+            return store.add_chat(repo["id"], payload, session["id"], replace_id)
 
         if not streaming:
             task = asyncio.create_task(agent(**kwargs))

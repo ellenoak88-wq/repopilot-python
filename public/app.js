@@ -110,6 +110,17 @@ function addMessage(item) {
   const trace = el('details', 'trace'); trace.append(el('summary', '', `${item.trace.length} 个执行步骤 · 查看工具记录`));
   const steps = el('ol'); item.trace.forEach(s => steps.append(el('li', '', `${s.label} — ${s.detail}`))); trace.append(steps);
   assistant.append(label, content, trace);
+  if (item.sessionSummary?.topics.length) {
+    const { topics, olderTurns } = item.sessionSummary;
+    const details = el('details', 'learning-memory session-summary');
+    details.append(el('summary', '', `会话自动摘要 · ${topics.length} 个话题`));
+    const description = item.mode === 'agent' ? '本次问答参考的历史摘录' : '当前会话的历史摘录';
+    details.append(el('p', 'muted', `${description}，从较早的 ${olderTurns} 轮中选取。`));
+    for (const topic of topics) {
+      details.append(el('strong', '', topic.question), el('p', '', topic.answer));
+    }
+    assistant.append(details);
+  }
   for (const memory of item.memoriesUsed || []) {
     const details=el('details','learning-memory');details.append(el('summary','',`[${memory.citation}] 学习经验 · ${memory.title} · 修订 ${memory.revision}`));
     details.append(el('p','muted',`${memory.repo || '通用经验'} · ${memory.scope==='global'?'跨仓库通用':memory.scope==='section'?`分区共享 · ${memory.sectionName||'分区'}`:'项目专属'} · 保存的是本次引用快照`),el('p','',`适用条件：${memory.applicability}`),el('pre','',memory.content));
