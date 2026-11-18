@@ -188,6 +188,10 @@
 .sidebar-menu-trigger:hover,.sidebar-menu-trigger[aria-expanded=true]{background:#e8f1ed;color:var(--green)}
 .repo-row{display:flex;align-items:center;gap:2px;border-radius:8px;margin:3px 0;min-width:0}
 .repo-row.selected{background:#f1f5f4}.repo-row.selected>.repo-item{color:var(--green)}
+@media (hover: hover) {
+  .repo-row:hover { background: #eaf1ee; }
+  .repo-row.selected:hover { background: #e0ebe6; }
+}
 .repo-row>.repo-item{flex:1;min-width:0;cursor:grab;width:auto;padding-right:0}.repo-row>.repo-item:active{cursor:grabbing}
 .repo-group{border:1px solid transparent;border-radius:8px;padding:2px;transition:background .15s,border-color .15s}
 .repo-group.drop-target{background:#e4f4ec;border-color:#36a58b;box-shadow:inset 0 0 0 1px #36a58b}
