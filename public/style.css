@@ -2,7 +2,9 @@
 
 .composer .composer-toolbar { position:relative; display:flex; align-items:center; gap:8px; flex-wrap:nowrap; padding-top:6px; }
 .composer-toolbar > button { white-space:nowrap; min-height:32px; }
-.composer-toolbar :is(#send-button,#stop-button) { margin-left:auto; flex:none; }
+.composer-toolbar :is(#send-button,#stop-button,#wiki-open) { flex:none; }
+.composer-toolbar #wiki-open { margin-right:auto; background:#f1edfc; border-color:#ded5f3; color:#59467a; }
+.composer-toolbar #wiki-open:hover { background:#e6dff7; }
 .model-toggle { display:flex; align-items:center; gap:5px; min-width:0; border:0; border-radius:7px; padding:5px 9px; background:#f1f3f3; color:#525d60; }
 .model-toggle:hover,.model-toggle[aria-expanded="true"] { background:#e8eded; }
 .composer .model-toggle span { display:inline; font-size:12px; margin:0; color:inherit; }
@@ -11,10 +13,12 @@
 .picker-caret,.picker-row i { width:7px; height:7px; box-sizing:border-box; border:solid currentColor; border-width:1.5px 1.5px 0 0; flex:none; }
 .picker-caret { transform:rotate(-45deg); margin:3px 1px 0 3px; }
 .model-toggle[aria-expanded="true"] .picker-caret { transform:rotate(135deg); margin-top:-3px; }
-.model-panel { position:absolute; bottom:calc(100% + 4px); left:0; z-index:4; width:min(340px,100%); padding:5px; border:1px solid #dfe5e2; border-radius:14px; background:white; box-shadow:0 8px 28px #21372c24; }
+.model-panel { position:absolute; bottom:calc(100% + 4px); right:0; z-index:4; width:min(340px,100%); padding:5px; border:1px solid #e2e2e5; border-radius:14px; background:white; box-shadow:0 8px 28px #2020281a; }
 .picker-row,.picker-custom { display:flex; align-items:center; gap:10px; min-height:44px; padding:0 10px; font-size:14px; color:var(--ink); white-space:nowrap; }
 .picker-row { position:relative; }
-.picker-row:hover { background:#f4f7f6; border-radius:9px; }
+.picker-row:hover,.picker-row:focus-within,.picker-custom:focus-within { background:#f1f1f4; border-radius:9px; }
+.model-panel :is(select,input):focus { outline:none; }
+.model-toggle:focus-visible,.picker-refresh:focus-visible { outline:2px solid #666673; outline-offset:2px; }
 .composer .picker-row select { flex:1; min-width:0; max-width:none; width:0; appearance:none; color:#626c71; border:0; background:transparent; font:inherit; text-align:right; text-align-last:right; padding:10px 18px 10px 0; cursor:pointer; text-overflow:ellipsis; }
 .picker-row i { position:absolute; right:12px; transform:rotate(45deg); pointer-events:none; }
 .picker-custom input { flex:1; min-width:0; padding:6px; }
