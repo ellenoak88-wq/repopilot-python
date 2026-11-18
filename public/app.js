@@ -303,6 +303,9 @@ function updateEfforts(reset = true) {
 }
 $('model-choice').onchange = () => updateEfforts();
 $('custom-model').oninput = () => updateEfforts();
+$('custom-model').onkeydown = event => {
+  if (event.key === 'Enter' && !event.isComposing) event.preventDefault();
+};
 async function refreshModels(quiet = false) {
   if (busy) return;
   setBusy(true);

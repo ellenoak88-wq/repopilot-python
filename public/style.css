@@ -5,6 +5,8 @@
 .model-controls input { width:250px;max-width:100%;min-width:0;padding:5px 8px;border:1px solid #dce5df;border-radius:5px;background:#fff;color:#314e3f;font:11px monospace }
 .model-controls label {min-width:0;max-width:100%}
 .model-controls small{flex-basis:100%}
+.composer .model-controls { align-items:center; gap:8px 12px; padding:8px 0 10px; margin-bottom:8px; }
+.composer .model-controls select { max-width:100%; }
 .message-content.markdown-body {white-space:normal;line-height:1.85}
 .markdown-body p {margin:.6em 0}
 .markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6 {font-size:1.2em;line-height:1.5;letter-spacing:normal;margin:1.1em 0 .5em;font-weight:650}
