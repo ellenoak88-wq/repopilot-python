@@ -86,9 +86,10 @@
               <span id="model-name">选择模型</span><span id="effort-name"></span><i class="picker-caret" aria-hidden="true"></i>
             </button>
             <div id="model-panel" class="model-panel hidden" role="group" aria-label="模型设置">
-              <label class="picker-row">模型<select id="model-choice" aria-label="模型"></select><i aria-hidden="true"></i></label>
+              <div class="picker-row"><label for="model-list-toggle">模型</label><button id="model-list-toggle" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="model-choice">选择模型</button><i aria-hidden="true"></i></div>
+              <select id="model-choice" class="model-list hidden" aria-label="模型" size="8"></select>
               <label id="custom-model-label" class="picker-custom hidden">自定义模型 ID<input id="custom-model" maxlength="128" autocomplete="off" placeholder="输入模型 ID"></label>
-              <label class="picker-row">推理等级<select id="effort-choice" aria-label="推理等级"></select><i aria-hidden="true"></i></label>
+              <div class="picker-row"><label for="effort-choice">推理等级</label><select id="effort-choice"></select><i aria-hidden="true"></i></div>
               <button id="refresh-models" class="picker-refresh" type="button">刷新模型列表</button>
             </div>
             <button id="stop-button" class="secondary hidden" type="button">停止 ■</button>

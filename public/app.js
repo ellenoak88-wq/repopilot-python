@@ -286,6 +286,7 @@ function renderModelChoices(selected = selectedModel()) {
   }
   const custom = el('option', '', '自定义模型 ID…'); custom.value = '__custom__';
   $('model-choice').replaceChildren(...options, custom);
+  $('model-choice').size = Math.min(8, options.length + 1);
   if (models.some(m => m.id === selected)) $('model-choice').value = selected;
   else { $('model-choice').value = '__custom__'; $('custom-model').value = selected; }
 }
@@ -301,6 +302,7 @@ function updateEfforts(reset = true) {
   $('custom-model').disabled = busy;
   $('effort-choice').disabled = busy || !spec?.efforts.length;
   const name = model === 'deepseek-flash' ? 'DeepSeek-V4.1-Flash' : model || '自定义模型';
+  $('model-list-toggle').textContent = $('model-choice').selectedOptions[0]?.textContent || name;
   const effort = $('effort-choice').value;
   $('model-name').textContent = name;
   $('effort-name').textContent = effort === 'default' ? '默认' : effort.charAt(0).toUpperCase() + effort.slice(1);
@@ -309,6 +311,27 @@ function updateEfforts(reset = true) {
   try { if (model) localStorage.setItem('repopilot-model', model); localStorage.setItem('repopilot-effort', $('effort-choice').value); } catch {}
 }
 $('model-choice').onchange = () => updateEfforts();
+$('model-list-toggle').onclick = () => setModelList($('model-choice').classList.contains('hidden'), true);
+function setModelList(open, focus = false) {
+  $('model-choice').classList.toggle('hidden', !open);
+  $('model-list-toggle').setAttribute('aria-expanded', String(open));
+  if (focus) $(open ? 'model-choice' : 'model-list-toggle').focus();
+}
+function finishModelChoice() {
+  setModelList(false, true);
+  if ($('model-choice').value === '__custom__') $('custom-model').focus();
+}
+$('model-choice').onclick = event => {
+  if (event.target.tagName === 'OPTION') finishModelChoice();
+};
+$('model-choice').onkeydown = event => {
+  if (event.key === 'Enter' || event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === 'Enter') finishModelChoice();
+    else setModelList(false, true);
+  }
+};
 $('custom-model').oninput = () => updateEfforts();
 $('custom-model').onkeydown = event => {
   if (event.key === 'Enter' && !event.isComposing) event.preventDefault();
@@ -326,9 +349,10 @@ async function refreshModels(quiet = false) {
 $('refresh-models').onclick = () => refreshModels();
 $('effort-choice').onchange = () => updateEfforts(false);
 function setModelMenu(open, restoreFocus = false) {
+  setModelList(false);
   $('model-panel').classList.toggle('hidden', !open);
   $('model-toggle').setAttribute('aria-expanded', String(open));
-  if (open) $('model-choice').focus();
+  if (open) $('model-list-toggle').focus();
   else if (restoreFocus) $('model-toggle').focus();
 }
 $('model-toggle').onclick = () => setModelMenu($('model-panel').classList.contains('hidden'));
