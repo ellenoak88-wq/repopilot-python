@@ -200,3 +200,28 @@
 .sidebar-menu{position:fixed;z-index:30;width:190px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;background:white;border:1px solid #d9e3dd;border-radius:8px;padding:5px;box-shadow:0 8px 28px #183b2d26}
 .sidebar-menu[hidden]{display:none}.sidebar-menu button{display:block;width:100%;border:0;background:white;color:#365c48;text-align:left;padding:9px 10px;border-radius:4px;font-size:12px}.sidebar-menu button:hover,.sidebar-menu button:focus{background:#edf5f0}.sidebar-menu .danger{color:#aa3c31}
 @media(max-width:800px){.repo-row>.repo-item{padding:7px 8px}.sidebar-menu-trigger{min-width:36px;min-height:36px}.repo-group-toggle{font-size:12px}}
+
+.wiki-dialog {
+  width: min(760px, calc(100vw - 28px));
+  max-height: 88vh;
+  padding: clamp(16px, 4vw, 28px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.wiki-dialog::backdrop { background: #132e2855; }
+.wiki-dialog label:not([hidden]), .wiki-list { display: grid; gap: 8px; margin: 12px 0; }
+.wiki-dialog :is(select, input, textarea) {
+  width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit;
+}
+.wiki-dialog textarea { resize: vertical; }
+.wiki-list button { text-align: left; }
+.wiki-entry { border-top: 1px solid var(--line); padding: 14px 0; }
+.wiki-entry h3 { margin: 0; }
+.wiki-entry .message-content { margin: 12px 0; }
+.wiki-entry .source a { margin-inline-start: 8px; }
+.wiki-addition { border-inline-start: 3px solid var(--green); background: #f3f8f5; padding: 12px 16px; margin: 16px 0; }
+.wiki-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.wiki-dialog [role=status]:empty { display: none; }
+.save-wiki { margin-inline-start: 6px; }

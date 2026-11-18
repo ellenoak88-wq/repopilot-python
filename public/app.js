@@ -2,6 +2,7 @@ import { createSidebar } from './sidebar.js';
 import { createSessionList } from './session-list.js';
 import { createSections } from './sections.js';
 import { createLearning } from './learning.js';
+import { createWiki } from './wiki.js';
 import { createRetrieval } from './retrieval.js';
 import { createReader } from './reader.js';
 import { createExplorer } from './explorer.js';
@@ -20,6 +21,8 @@ const checklist = createChecklist(openFile);
 const retrieval = createRetrieval({setBusy, toast});
 const discovery = createDiscovery(url => importRepository(url, true));
 const learning = createLearning({api, toast});
+const openWiki = createWiki({api, openFile});
+$('wiki-open').onclick = () => { if (active && !busy) openWiki(active); };
 const sectionsUI = createSections({api,toast,onChange:refreshRepos});
 const sidebarUI = createSidebar({root:$('repo-list'),onOpen:id=>openRepo(id).catch(e=>toast(e.message)),onRepoAction:repoAction,onSectionAction:sectionAction,onMove:moveRepo});
 const sessionUI = createSessionList({root:$('session-list'),onSelect:id=>openRepo(active.id,id).catch(e=>toast(e.message)),onAction:sessionAction});
@@ -68,7 +71,7 @@ function repoAction(action,repo){
   if(busy)return;
   if(action==='move'){sectionsUI.open(repo.id);return;}
   if(action==='pin'){sidebarMutation('/api/repos/pin',{repo:repo.id,pinned:!repo.pinned},repo.pinned?'已取消项目置顶。':'项目已在分区内置顶。');return;}
-  if(action==='delete'&&confirm(`删除本地项目「${repo.id}」？将删除本地源码索引、该项目的全部会话、上手清单和向量索引。已保存的学习档案会保留并标为来源过期，GitHub 仓库不受影响。`)){
+  if(action==='delete'&&confirm(`删除本地项目「${repo.id}」？将删除本地源码索引、该项目的全部会话、Wiki 专题、上手清单和向量索引。已保存的学习档案会保留并标为来源过期，GitHub 仓库不受影响。`)){
     sidebarMutation('/api/repos/delete',{repo:repo.id,indexVersion:repo.indexVersion},'本地项目已删除，学习档案已保留。',()=>{
       if(active?.id===repo.id){++repoOpenVersion;++sessionSearchVersion;active=null;currentSession=null;sessions=[];history=[];files=[];$('question').value='';showView('welcome');$('breadcrumb').textContent='仓库探索';}
     });
@@ -127,6 +130,12 @@ function addMessage(item) {
     const edit=el('button','secondary','查看档案当前版本');edit.type='button';edit.onclick=()=>learning.open(memory.id);details.append(edit);assistant.append(details);
   }
   if(item.id) { const save=el('button','secondary save-learning','存为学习档案');save.type='button';save.onclick=()=>learning.saveChat(active.id,item.id);assistant.append(save); }
+  if (item.id) {
+    const saveWiki = el('button', 'secondary save-wiki', '保存到 Wiki');
+    saveWiki.type = 'button';
+    saveWiki.onclick = () => openWiki(active, item.id);
+    assistant.append(saveWiki);
+  }
   $('messages').append(user, assistant);
   return { assistant, content, label, steps, trace };
 }
