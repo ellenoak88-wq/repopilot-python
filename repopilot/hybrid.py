@@ -3,13 +3,18 @@ import asyncio
 import hashlib
 import json
 import math
+import os
+import sqlite3
+import uuid
+from contextlib import closing
+from pathlib import Path
 
 from .query_rewrite import rewrite_query
 from .rerank import rerank
 from .retrieval import search
 from .store import now
 
-MAX_VECTORS = 10000
+MAX_VECTORS = 150_000
 
 
 def chunk_key(chunk):
@@ -62,7 +67,15 @@ class HybridRetrieval:
     def __init__(self, store, embedder):
         self.store, self.embedder = store, embedder
         self.build_lock = asyncio.Lock()
+        self.max_vectors = int(os.getenv("REPO_MAX_VECTOR_WINDOWS", MAX_VECTORS))
+        if self.max_vectors < 1:
+            raise ValueError("REPO_MAX_VECTOR_WINDOWS 必须为正整数。")
+        self.db_file = store.db.execute("PRAGMA database_list").fetchone()[2]
         with store.db:
+            store.db.execute("""CREATE TABLE IF NOT EXISTS vector_batches (
+                repo TEXT NOT NULL, generation TEXT NOT NULL, seq INTEGER NOT NULL,
+                owners BLOB NOT NULL, vectors BLOB NOT NULL,
+                PRIMARY KEY(repo,generation,seq)) WITHOUT ROWID""")
             store.db.execute("""CREATE TABLE IF NOT EXISTS vector_indexes (
                 repo TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, model TEXT NOT NULL,
                 chunk_count INTEGER NOT NULL, vector_count INTEGER NOT NULL,
@@ -73,7 +86,7 @@ class HybridRetrieval:
         row = self.store.db.execute("SELECT fingerprint,model,chunk_count,vector_count,built_at FROM vector_indexes WHERE repo=?", (repo["id"],)).fetchone()
         valid = bool(row and row["fingerprint"] == fingerprint(repo, chunks, self.embedder.identity))
         return dict(state="ready" if valid else "stale" if row else "missing", model=self.embedder.name,
-                    chunkCount=len(chunks), indexedChunks=row["chunk_count"] if row else 0,
+                    chunkCount=len(chunks), windowLimit=self.max_vectors, indexedChunks=row["chunk_count"] if row else 0,
                     vectorCount=row["vector_count"] if row else 0, builtAt=row["built_at"] if row else None)
 
     async def build(self, repo, progress=lambda *_: None, *, force=False):
@@ -84,31 +97,71 @@ class HybridRetrieval:
             signature = fingerprint(repo, chunks, self.embedder.identity)
             if not force and self.status(repo, chunks)["state"] == "ready":
                 return self.status(repo, chunks)
-            owners, vectors, dimension = [], [], None
-            progress("准备本地向量模型；首次使用需下载模型", 2)
-            for start in range(0, len(chunks), 16):
-                batch = chunks[start:start + 16]
-                positions, values = await self.embedder.documents([c["text"] or " " for c in batch])
-                if len(positions) != len(values) or set(positions) != set(range(len(batch))):
-                    raise ValueError("向量服务返回了不完整的片段结果。")
-                for owner, value in zip(positions, values):
-                    if type(owner) is not int:
-                        raise ValueError("向量片段编号无效。")
-                    vec = normalize(value, dimension)
-                    dimension = len(vec)
-                    owners.append(start + owner)
-                    vectors.append(vec)
-                if len(vectors) > MAX_VECTORS:
-                    raise ValueError("向量窗口超过 10,000 个，请减少索引文件后重试。")
-                progress(f"已向量化 {min(start + 16, len(chunks))}/{len(chunks)} 个片段", min(95, int((start + len(batch)) / len(chunks) * 95)))
-            current = self.store.get(repo["id"])
-            if not current or fingerprint(current, self.store.chunks(repo["id"]), self.embedder.identity) != signature:
-                raise ValueError("仓库索引已变化，请重新建立向量索引。")
-            payload = json.dumps(dict(owners=owners, vectors=vectors, dimension=dimension))
+            counts = []
+            for start in range(0, len(chunks), 128):
+                progress(f"预检窗口：{start:,}/{len(chunks):,} 个片段", int(8 * start / len(chunks)))
+                texts = [c["text"] or " " for c in chunks[start:start + 128]]
+                batch_counts = await self.embedder.window_counts(texts)
+                if len(batch_counts) != len(texts) or any(type(c) is not int or c < 1 for c in batch_counts):
+                    raise ValueError("分词器返回的窗口数量无效。")
+                counts.extend(batch_counts)
+            total = sum(counts)
+            if total > self.max_vectors:
+                raise ValueError(f"预检需要 {total:,} 个向量窗口，上限 {self.max_vectors:,}。请缩小索引范围或调整 REPO_MAX_VECTOR_WINDOWS。")
+            progress(f"预检通过：{total:,} 个窗口，上限 {self.max_vectors:,}，开始分批写入", 8)
+            repo_id = repo["id"]
+            generation = uuid.uuid4().hex
+            row = self.store.db.execute("SELECT payload FROM vector_indexes WHERE repo=?", (repo_id,)).fetchone()
+            active = json.loads(row[0]).get("generation", "") if row else ""
+            # Recover abandoned staging batches after a process restart (single build worker).
             with self.store.db:
-                self.store.db.execute("INSERT OR REPLACE INTO vector_indexes VALUES (?,?,?,?,?,?,?)",
-                                      (repo["id"], signature, self.embedder.identity, len(chunks), len(vectors), now(), payload))
+                self.store.db.execute("DELETE FROM vector_batches WHERE repo=? AND generation<>?", (repo_id, active))
+            try:
+                dimension = await self._write_batches(repo_id, generation, chunks, counts, total, progress)
+                current = self.store.get(repo_id)
+                if not current or fingerprint(current, self.store.chunks(repo_id), self.embedder.identity) != signature:
+                    raise ValueError("仓库索引已变化，请重新建立向量索引。")
+                payload = json.dumps(dict(generation=generation, dimension=dimension))
+                with self.store.db:
+                    self.store.db.execute("INSERT OR REPLACE INTO vector_indexes VALUES (?,?,?,?,?,?,?)",
+                                          (repo_id, signature, self.embedder.identity, len(chunks), total, now(), payload))
+                    self.store.db.execute("DELETE FROM vector_batches WHERE repo=? AND generation<>?", (repo_id, generation))
+            except BaseException:
+                with self.store.db:
+                    self.store.db.execute("DELETE FROM vector_batches WHERE repo=? AND generation=?", (repo_id, generation))
+                raise
             return self.status(repo, chunks)
+
+    async def _write_batches(self, repo, generation, chunks, counts, total, progress):
+        import numpy as np
+
+        written = dimension = 0
+        for start in range(0, len(chunks), 16):
+            batch = chunks[start:start + 16]
+            seen = [0] * len(batch)
+            async for owners, vectors in self.embedder.document_batches([c["text"] or " " for c in batch]):
+                if not owners or len(owners) != len(vectors):
+                    raise ValueError("向量服务返回了不完整的片段结果。")
+                for owner in owners:
+                    if type(owner) is not int or not 0 <= owner < len(batch):
+                        raise ValueError("向量片段编号无效。")
+                    seen[owner] += 1
+                values = np.asarray(vectors, dtype="<f4")
+                if values.ndim != 2 or not 1 <= values.shape[1] <= 4096 or dimension not in (0, values.shape[1]):
+                    raise ValueError("向量维度无效。")
+                dimension = values.shape[1]
+                norms = np.linalg.norm(values, axis=1, keepdims=True)
+                if not np.isfinite(norms).all() or (norms <= 0).any():
+                    raise ValueError("向量长度无效。")
+                positions = np.asarray([start + owner for owner in owners], dtype="<i4")
+                with self.store.db:
+                    self.store.db.execute("INSERT INTO vector_batches VALUES (?,?,?,?,?)",
+                                          (repo, generation, written, positions.tobytes(), (values / norms).astype("<f4", copy=False).tobytes()))
+                written += len(owners)
+                progress(f"已写入 {written:,}/{total:,} 个向量窗口", 8 + int(89 * written / total))
+            if seen != counts[start:start + len(batch)]:
+                raise ValueError("实际向量窗口数量与预检不符。")
+        return dimension
 
     async def retrieve(self, repo, chunks, query, limit=6, mode="hybrid", path_filter="", previous_question=""):
         if mode not in ("hybrid", "bm25"):
@@ -141,9 +194,31 @@ class HybridRetrieval:
                     rewrite=dict(terms=list(rewrite.terms), contextual=rewrite.contextual))
 
     async def _vector_candidates(self, repo, chunks, query, limit, path_filter):
-        row = self.store.db.execute("SELECT payload FROM vector_indexes WHERE repo=?", (repo["id"],)).fetchone()
-        index = json.loads(row["payload"])
-        vector = normalize(await self.embedder.query(query), index["dimension"])
+        vector = await self.embedder.query(query)
         allowed = {i for i, chunk in enumerate(chunks) if path_filter.lower() in chunk["path"].lower()}
-        ranked = await asyncio.to_thread(dense_scores, index["vectors"], vector, index["owners"], allowed)
+
+        def read(db):
+            import numpy as np
+
+            row = db.execute("SELECT fingerprint,payload FROM vector_indexes WHERE repo=?", (repo["id"],)).fetchone()
+            if not row or row[0] != fingerprint(repo, chunks, self.embedder.identity):
+                raise ValueError("向量索引已变化。")
+            index = json.loads(row[1])
+            q = normalize(vector, index["dimension"])
+            if "generation" not in index:
+                return dense_scores(index["vectors"], q, index["owners"], allowed)
+            best = np.zeros(len(chunks), dtype=np.float32)
+            q = np.asarray(q, dtype=np.float32)
+            for owners, block in db.execute("SELECT owners,vectors FROM vector_batches WHERE repo=? AND generation=? ORDER BY seq",
+                                            (repo["id"], index["generation"])):
+                matrix = np.frombuffer(block, dtype="<f4").reshape(-1, len(q))
+                np.maximum.at(best, np.frombuffer(owners, dtype="<i4"), np.einsum("ij,j->i", matrix, q))
+            return sorted(((i, float(best[i])) for i in allowed if best[i] > 0), key=lambda pair: (-pair[1], pair[0]))
+
+        def read_snapshot():
+            with closing(sqlite3.connect(Path(self.db_file).as_uri() + "?mode=ro", uri=True)) as db:
+                db.execute("BEGIN")
+                return read(db)
+
+        ranked = await asyncio.to_thread(read_snapshot) if self.db_file else read(self.store.db)
         return [{**chunks[i], "score": score} for i, score in ranked[:limit]]

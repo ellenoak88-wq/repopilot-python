@@ -37,7 +37,15 @@ class LocalEmbedder:
                                        providers=["CPUExecutionProvider"], specific_model_path=directory, local_files_only=True)
         return self.model
 
-    def _documents(self, texts):
+    def _counts(self, texts):
+        with self.lock:
+            tokenizer = self._load().model.tokenizer
+            return [1 + len(tokenizer.encode(text).overflowing) for text in texts]
+
+    async def window_counts(self, texts):
+        return await asyncio.to_thread(self._counts, texts)
+
+    def _windows(self, texts):
         with self.lock:
             model = self._load()
             # FastEmbed 0.9.1 exposes the underlying Hugging Face tokenizer here.
@@ -50,13 +58,24 @@ class LocalEmbedder:
                 for window in [encoded, *encoded.overflowing]:
                     windows.append(tokenizer.decode(window.ids, skip_special_tokens=True) or " ")
                     owners.append(owner)
-                    if len(windows) > 10000:
-                        raise ValueError("向量窗口超过上限，请减少索引文件后重试。")
-            vectors = [v.tolist() for v in model.embed(windows, batch_size=32)]
-            return owners, vectors
+            return owners, windows
+
+    def _embed(self, windows):
+        with self.lock:
+            return [v.tolist() for v in self._load().embed(windows, batch_size=32)]
+
+    async def document_batches(self, texts):
+        owners, windows = await asyncio.to_thread(self._windows, texts)
+        for start in range(0, len(windows), 128):
+            vectors = await asyncio.to_thread(self._embed, windows[start:start + 128])
+            yield owners[start:start + 128], vectors
 
     async def documents(self, texts):
-        return await asyncio.to_thread(self._documents, texts)
+        owners, vectors = [], []
+        async for positions, batch in self.document_batches(texts):
+            owners.extend(positions)
+            vectors.extend(batch)
+        return owners, vectors
 
     def _query(self, text):
         with self.lock:

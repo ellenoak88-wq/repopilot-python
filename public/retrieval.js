@@ -22,7 +22,7 @@ export function createRetrieval({setBusy, toast}) {
       const ready = result.state === 'ready';
       $('retrieval-state').textContent = ready ? '混合检索已就绪' : result.state === 'stale' ? '向量索引已过期 · 当前回退 BM25' : '尚未建立向量索引 · 当前使用 BM25';
       $('retrieval-build').textContent = result.state === 'missing' ? '建立向量索引' : '重建向量索引';
-      $('retrieval-info').textContent = `${result.model} · ${ready ? `${result.indexedChunks} 个片段 / ${result.vectorCount} 个向量窗口` : `${result.chunkCount} 个待索引片段`}${result.builtAt ? ` · 上次建立 ${new Date(result.builtAt).toLocaleString('zh-CN',{hour12:false})}` : ''}`;
+      $('retrieval-info').textContent = `${result.model} · ${ready ? `${result.indexedChunks} 个片段 / ${result.vectorCount} 个向量窗口` : `${result.chunkCount} 个待索引片段 · 窗口上限 ${result.windowLimit.toLocaleString('zh-CN')}`}${result.builtAt ? ` · 上次建立 ${new Date(result.builtAt).toLocaleString('zh-CN',{hour12:false})}` : ''}`;
     } catch (error) {
       if (revision === generation) $('retrieval-state').textContent = error.message;
     } finally { if (revision === generation) { loading = false; sync(); } }

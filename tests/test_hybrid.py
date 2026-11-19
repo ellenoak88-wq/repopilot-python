@@ -22,6 +22,12 @@ class FakeEmbedder:
         self.document_calls, self.query_calls = 0, 0
         self.fail = False
 
+    async def window_counts(self, texts):
+        return [1] * len(texts)
+
+    async def document_batches(self, texts):
+        yield await self.documents(texts)
+
     async def documents(self, texts):
         self.document_calls += 1
         return list(range(len(texts))), [[1., 0.] if 'Launch' in t else [0., 1.] for t in texts]
@@ -174,3 +180,36 @@ async def test_agent_uses_same_retriever_in_initial_and_tool_search():
     result = await ask_agent(repo=META,files=FILES,chunks=[],question='first',retriever=retrieve,
         config={'key':'test','base':'https://provider.test/v1','model':'gpt-4.1-mini'},transport=httpx.MockTransport(provider))
     assert queries == ['first','followup'] and len(result['sources']) == 1
+
+async def test_preflight_limit_and_atomic_replacement(state):
+    store, repo, embedder, service = state
+    await service.build(repo)
+    previous = store.db.execute("SELECT payload FROM vector_indexes").fetchone()[0]
+    service.max_vectors = 1
+    with pytest.raises(ValueError, match="预检需要 2"):
+        await service.build(repo, force=True)
+    assert embedder.document_calls == 1
+
+    service.max_vectors = 10
+    async def broken(texts):
+        yield [0], [[1., 0.]]
+        raise ValueError("batch interrupted")
+    embedder.document_batches = broken
+    with pytest.raises(ValueError, match="batch interrupted"):
+        await service.build(repo, force=True)
+    assert store.db.execute("SELECT payload FROM vector_indexes").fetchone()[0] == previous
+    assert store.db.execute("SELECT COUNT(DISTINCT generation) FROM vector_batches").fetchone()[0] == 1
+    assert (await service.retrieve(repo, store.chunks(repo['id']), 'subtotal'))["actual"] == "hybrid"
+
+
+async def test_legacy_json_index_query_and_upgrade(state):
+    from repopilot.hybrid import fingerprint
+    store, repo, embedder, service = state
+    chunks = store.chunks(repo["id"])
+    payload = json.dumps(dict(owners=[0,1], vectors=[[1.,0.],[0.,1.]], dimension=2))
+    with store.db:
+        store.db.execute("INSERT INTO vector_indexes VALUES (?,?,?,?,?,?,?)",
+                         (repo["id"], fingerprint(repo,chunks,embedder.identity),embedder.identity,2,2,"old",payload))
+    assert (await service.retrieve(repo,chunks,"怎样让服务可用"))["actual"] == "hybrid"
+    assert (await service.build(repo,force=True))["vectorCount"] == 2
+    assert "generation" in json.loads(store.db.execute("SELECT payload FROM vector_indexes").fetchone()[0])
