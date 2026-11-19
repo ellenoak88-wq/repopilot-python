@@ -1,0 +1,157 @@
+{
+  "retriever_commit": "ae1fcf1",
+  "snapshot": "e89cda9804643d3631e77652d1bca47a079adb69",
+  "split": "dev",
+  "k": 5,
+  "scored": 18,
+  "excluded": [
+    "LF-019",
+    "LF-020"
+  ],
+  "results": {
+    "bm25": {
+      "metrics": {
+        "recall": 0.05555555555555555,
+        "complete": 0.05555555555555555,
+        "reciprocal_rank": 0.018518518518518517
+      },
+      "cases": {
+        "LF-001": [
+          null
+        ],
+        "LF-002": [
+          null
+        ],
+        "LF-003": [
+          null,
+          null
+        ],
+        "LF-004": [
+          null,
+          null
+        ],
+        "LF-005": [
+          null
+        ],
+        "LF-006": [
+          null
+        ],
+        "LF-007": [
+          null,
+          null
+        ],
+        "LF-008": [
+          null,
+          null
+        ],
+        "LF-009": [
+          null
+        ],
+        "LF-010": [
+          null,
+          null
+        ],
+        "LF-011": [
+          null
+        ],
+        "LF-012": [
+          null,
+          null
+        ],
+        "LF-013": [
+          null,
+          null
+        ],
+        "LF-014": [
+          null,
+          null
+        ],
+        "LF-015": [
+          null
+        ],
+        "LF-016": [
+          null,
+          null
+        ],
+        "LF-017": [
+          3
+        ],
+        "LF-018": [
+          null
+        ]
+      }
+    },
+    "hybrid": {
+      "metrics": {
+        "recall": 0.08333333333333333,
+        "complete": 0.05555555555555555,
+        "reciprocal_rank": 0.06666666666666667
+      },
+      "cases": {
+        "LF-001": [
+          null
+        ],
+        "LF-002": [
+          null
+        ],
+        "LF-003": [
+          null,
+          null
+        ],
+        "LF-004": [
+          null,
+          5
+        ],
+        "LF-005": [
+          null
+        ],
+        "LF-006": [
+          null
+        ],
+        "LF-007": [
+          null,
+          null
+        ],
+        "LF-008": [
+          null,
+          null
+        ],
+        "LF-009": [
+          null
+        ],
+        "LF-010": [
+          null,
+          null
+        ],
+        "LF-011": [
+          null
+        ],
+        "LF-012": [
+          null,
+          null
+        ],
+        "LF-013": [
+          null,
+          null
+        ],
+        "LF-014": [
+          null,
+          null
+        ],
+        "LF-015": [
+          null
+        ],
+        "LF-016": [
+          null,
+          null
+        ],
+        "LF-017": [
+          1
+        ],
+        "LF-018": [
+          null
+        ]
+      }
+    }
+  }
+}

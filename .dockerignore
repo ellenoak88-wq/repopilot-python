@@ -8,6 +8,7 @@
 !public/
 !public/**
 !eval/
+!eval/loopforge.dev-baseline.json
 !eval/loopforge.jsonl
 !eval/loopforge.snapshot.json
 !eval/run_loopforge.py
