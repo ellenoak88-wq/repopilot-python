@@ -68,7 +68,7 @@ async def test_evaluation_routes_and_duplicate_run(corpus,monkeypatch):
     release=asyncio.Event()
     async def worker(self,job,output):
         await release.wait()
-        runner.write_report(output, {"split":job["split"],"metrics":{}})
+        runner.write_report(output, {"split":job["split"],"metrics":{},"snapshot":self.snapshot,"datasetSha256":self.digest})
         job.update(state="done")
     monkeypatch.setattr(Evaluation,"_run",worker)
     app=create_app(store=store)
@@ -84,4 +84,6 @@ async def test_evaluation_routes_and_duplicate_run(corpus,monkeypatch):
         assert status["reports"]==["dev"] and status["job"]["state"]=="done"
         response=await client.get("/api/evaluation/report",params=args)
         assert response.json()["split"]=="dev" and "attachment" in response.headers["content-disposition"]
+        runner.write_report(folder/"evaluations"/"loopforge-dev-compare.json", {"split":"dev","datasetSha256":"older-set"})
+        assert (await client.get("/api/evaluation/report",params=args)).status_code==404
         assert (await client.get("/eval/loopforge.jsonl")).status_code==404

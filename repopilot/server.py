@@ -352,7 +352,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     if path.endswith("/status"):
                         return evaluation.status(repo)
                     report = evaluation.report(q.get("split", "dev"))
-                    if not report.is_file():
+                    if not evaluation.has_report(q.get("split", "dev")):
                         raise ApiError(404, "还没有已完成的报告。")
                     return FileResponse(report, media_type="application/json", filename=report.name)
                 if path == "/api/checklist":

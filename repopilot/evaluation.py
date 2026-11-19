@@ -1,6 +1,8 @@
 """Background launcher for the repository's offline retrieval benchmark."""
 import asyncio
+import hashlib
 import json
+import logging
 import os
 import sys
 from contextlib import suppress
@@ -15,7 +17,15 @@ class Evaluation:
         filename = store.db.execute("PRAGMA database_list").fetchone()[2]
         self.db = Path(filename) if filename else None
         folder = Path(os.environ.get("REPOPILOT_EVAL_DIR") or ROOT / "eval")
-        self.snapshot = json.loads((folder / "loopforge.snapshot.json").read_text(encoding="utf-8"))
+        self.snapshot = {}
+        self.digest = None
+        try:
+            manifest = json.loads((folder / "loopforge.snapshot.json").read_text(encoding="utf-8"))
+            if all(isinstance(manifest.get(k), str) for k in ("repo", "repo_sha", "index_version")):
+                self.digest = hashlib.sha256((folder / "loopforge.jsonl").read_bytes()).hexdigest()
+                self.snapshot = manifest
+        except (OSError, ValueError, AttributeError):
+            logging.getLogger(__name__).warning("无法加载检索评测数据集，项目问答仍可使用。")
         self.job = None
         self.task = None
 
@@ -27,7 +37,17 @@ class Evaluation:
         return self.db.parent / "evaluations" / f"loopforge-{split}-compare.json"
 
     def supports(self, repo):
-        return repo["id"] == self.snapshot["repo"]
+        return repo["id"] == self.snapshot.get("repo")
+
+    def has_report(self, split):
+        if not self.db:
+            return False
+        try:
+            saved = json.loads(self.report(split).read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return False
+        return (isinstance(saved, dict) and saved.get("split") == split
+                and saved.get("snapshot") == self.snapshot and saved.get("datasetSha256") == self.digest)
 
     def matches(self, repo):
         return (repo["sha"], repo["indexVersion"]) == (self.snapshot["repo_sha"], self.snapshot["index_version"])
@@ -36,7 +56,7 @@ class Evaluation:
         if not self.supports(repo):
             return None
         return dict(matched=self.matches(repo), job=self.job,
-                    reports=[split for split in ("dev", "test") if self.db and self.report(split).is_file()])
+                    reports=[split for split in ("dev", "test") if self.has_report(split)])
 
     def start(self, repo, split):
         output = self.report(split)

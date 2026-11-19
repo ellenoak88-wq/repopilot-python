@@ -82,10 +82,13 @@ def copy_corpus(db, source_db, repo_id, include_vectors):
             db.execute("INSERT INTO repositories SELECT * FROM src.repositories WHERE id=?", (repo_id,))
             db.execute("INSERT INTO files SELECT * FROM src.files WHERE repo=?", (repo_id,))
             if include_vectors:
-                db.execute("INSERT INTO vector_indexes SELECT * FROM src.vector_indexes WHERE repo=?", (repo_id,))
-                db.execute("""INSERT INTO vector_batches SELECT b.* FROM src.vector_batches b
-                              JOIN vector_indexes i ON i.repo=b.repo AND json_extract(i.payload,'$.generation')=b.generation
-                              WHERE b.repo=?""", (repo_id,))
+                tables = {row[0] for row in db.execute("SELECT name FROM src.sqlite_master WHERE type='table'")}
+                if "vector_indexes" in tables:
+                    db.execute("INSERT INTO vector_indexes SELECT * FROM src.vector_indexes WHERE repo=?", (repo_id,))
+                if "vector_batches" in tables:
+                    db.execute("""INSERT INTO vector_batches SELECT b.* FROM src.vector_batches b
+                                  JOIN vector_indexes i ON i.repo=b.repo AND json_extract(i.payload,'$.generation')=b.generation
+                                  WHERE b.repo=?""", (repo_id,))
     finally:
         db.execute("DETACH DATABASE src")
 
