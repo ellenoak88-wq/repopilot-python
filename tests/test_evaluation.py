@@ -12,6 +12,31 @@ from repopilot.server import create_app
 from repopilot.store import Store
 
 
+def test_union_coverage_respects_source_gaps_alternatives_and_top_five():
+    def span(path, start, end):
+        return dict(path=path, start=start, end=end)
+
+    case = {"id": "coverage", "evidence_groups": [
+        {"any_of": [span("a", 2, 7)]},
+        {"any_of": [span("a", 2, 10)]},
+        {"any_of": [span("b", 1, 7), span("a", 20, 25)]},
+        {"any_of": [span("c", 1, 3), span("a", 6, 7)]},
+    ]}
+    # Reverse source order, an overlapping duplicate, a hole at line 8, and a sixth result.
+    items = [span("a", 5, 7), span("a", 2, 4), span("a", 3, 4),
+             span("a", 9, 10), span("b", 1, 4), span("a", 1, 25)]
+    row = runner.score(case, items)
+    assert row["union_ranks"] == [2, None, None, 1]
+    assert row["ranks"] == [None, None, None, 1]
+    assert row["union_recall_at_5"] == .5
+    assert row["single_chunk_recall_at_5"] == row["recall"] == .25
+    assert row["results"] == items[:5]
+    assert runner.score(case, [])["union_recall_at_5"] == 0
+    # Two partially covered alternatives within one file still prove no complete reference.
+    assert runner.score({"id": "alt", "evidence_groups": [{"any_of": [span("a", 1, 4), span("a", 8, 11)]}]},
+                        [span("a", 1, 2), span("a", 10, 11)])["union_ranks"] == [None]
+
+
 @pytest.fixture
 def corpus(tmp_path, monkeypatch):
     store = Store(tmp_path / "live.db")
@@ -49,6 +74,10 @@ async def test_combined_report_is_atomic_and_holdout_is_aggregate_only(corpus, m
         path=folder/"evaluations"/f"loopforge-{split}-compare.json"
         report=json.loads(path.read_text("utf-8"))
         assert set(report["results"]) == {"bm25","hybrid"}
+        assert report["scoringVersion"] == 2
+        for result in report["results"].values():
+            assert result["metrics"]["union_recall_at_5"] == result["metrics"]["single_chunk_recall_at_5"] == 1
+            assert result["evidenceCounts"] == {"total": 1, "union": 1, "single_chunk": 1}
         assert all(result["metrics"]["recall"]==1 for result in report["results"].values())
         assert ("cases" in report["results"]["hybrid"]) == (split=="dev")
         if split=="test":

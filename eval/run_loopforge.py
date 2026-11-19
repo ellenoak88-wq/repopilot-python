@@ -50,15 +50,36 @@ def validate(db, snapshot, cases):
                     raise ValueError(f"证据不匹配：{case['id']} {ref['path']} L{a}–{b}")
 
 
+def covers_reference(items, ref):
+    """Check one inclusive source span; overlaps and adjacent chunks can join."""
+    cursor = ref["start"]
+    spans = sorted((item["start"], item["end"]) for item in items if item["path"] == ref["path"])
+    for start, end in spans:
+        if start > cursor:
+            break
+        cursor = max(cursor, end + 1)
+        if cursor > ref["end"]:
+            return True
+    return False
+
+
 def score(case, items):
+    items = items[:5]
     ranks = []
+    union_ranks = []
     for group in case["evidence_groups"]:
         first = next((rank for rank, item in enumerate(items, 1)
                       if any(item["path"] == ref["path"] and item["start"] <= ref["start"]
                              and item["end"] >= ref["end"] for ref in group["any_of"])), None)
         ranks.append(first)
+        union_ranks.append(next((k for k in range(1, len(items) + 1)
+                                 if any(covers_reference(items[:k], ref) for ref in group["any_of"])), None))
     hits = [rank for rank in ranks if rank is not None]
-    return dict(id=case["id"], ranks=ranks, recall=len(hits) / len(ranks), complete=len(hits) == len(ranks),
+    single = len(hits) / len(ranks)
+    union = sum(rank is not None for rank in union_ranks) / len(ranks)
+    return dict(id=case["id"], ranks=ranks, union_ranks=union_ranks,
+                union_recall_at_5=union, single_chunk_recall_at_5=single,
+                recall=single, complete=len(hits) == len(ranks),
                 reciprocal_rank=1 / min(hits) if hits else 0,
                 results=[{k: item[k] for k in ("path", "start", "end")} for item in items])
 
@@ -110,9 +131,13 @@ async def evaluate(store, retriever, snapshot, cases, mode, split):
             raise ValueError(f"检索降级：{result['warning']}")
         rows.append(score(case, result["items"]))
         print(f"{mode} · 已评估 {number}/{len(scored)} 题", flush=True)
-    metrics = {name: mean(row[name] for row in rows) for name in ("recall", "complete", "reciprocal_rank")}
+    metrics = {name: mean(row[name] for row in rows) for name in
+               ("union_recall_at_5", "single_chunk_recall_at_5", "recall", "complete", "reciprocal_rank")}
+    counts = dict(total=sum(len(row["ranks"]) for row in rows),
+                  union=sum(rank is not None for row in rows for rank in row["union_ranks"]),
+                  single_chunk=sum(rank is not None for row in rows for rank in row["ranks"]))
     report = dict(snapshot=snapshot, split=split, mode=mode, k=5, scored=len(rows),
-                  excludedCount=len(selected)-len(rows), metrics=metrics)
+                  excludedCount=len(selected)-len(rows), metrics=metrics, evidenceCounts=counts)
     if split == "dev":
         report.update(cases=rows, unanswerable=[c["id"] for c in selected if not c["answerable"]])
     return report
@@ -153,7 +178,7 @@ async def run(args):
             store.close()
     report = (dict(snapshot=snapshot, split=args.split, k=5, results={r["mode"]: r for r in results})
               if args.mode == "compare" else results[0])
-    report.update(chunkerVersion=CHUNKER_VERSION, datasetSha256=digest, completedAt=datetime.now(timezone.utc).isoformat(),
+    report.update(scoringVersion=2, chunkerVersion=CHUNKER_VERSION, datasetSha256=digest, completedAt=datetime.now(timezone.utc).isoformat(),
                   embeddingModel=retriever.embedder.identity if "hybrid" in modes else None)
     output = args.output or src.parent / "evaluations" / f"loopforge-{args.split}-{args.mode}.json"
     write_report(output, report)

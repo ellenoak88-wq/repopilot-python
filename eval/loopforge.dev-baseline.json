@@ -20,6 +20,8 @@
           "scored": 26,
           "excludedCount": 2,
           "metrics": {
+            "union_recall_at_5": 0.07692307692307693,
+            "single_chunk_recall_at_5": 0.07692307692307693,
             "recall": 0.07692307692307693,
             "complete": 0.07692307692307693,
             "reciprocal_rank": 0.05128205128205128
@@ -119,12 +121,19 @@
             "LF-038": [
               null
             ]
+          },
+          "evidenceCounts": {
+            "total": 42,
+            "union": 2,
+            "single_chunk": 2
           }
         },
         "hybrid": {
           "scored": 26,
           "excludedCount": 2,
           "metrics": {
+            "union_recall_at_5": 0.17307692307692307,
+            "single_chunk_recall_at_5": 0.17307692307692307,
             "recall": 0.17307692307692307,
             "complete": 0.15384615384615385,
             "reciprocal_rank": 0.09743589743589744
@@ -224,6 +233,11 @@
             "LF-038": [
               2
             ]
+          },
+          "evidenceCounts": {
+            "total": 42,
+            "union": 7,
+            "single_chunk": 7
           }
         }
       }
@@ -236,6 +250,8 @@
           "scored": 26,
           "excludedCount": 2,
           "metrics": {
+            "union_recall_at_5": 0.11538461538461539,
+            "single_chunk_recall_at_5": 0.11538461538461539,
             "recall": 0.11538461538461539,
             "complete": 0.11538461538461539,
             "reciprocal_rank": 0.07692307692307693
@@ -335,12 +351,19 @@
             "LF-038": [
               2
             ]
+          },
+          "evidenceCounts": {
+            "total": 42,
+            "union": 3,
+            "single_chunk": 3
           }
         },
         "hybrid": {
           "scored": 26,
           "excludedCount": 2,
           "metrics": {
+            "union_recall_at_5": 0.21153846153846154,
+            "single_chunk_recall_at_5": 0.21153846153846154,
             "recall": 0.21153846153846154,
             "complete": 0.19230769230769232,
             "reciprocal_rank": 0.15064102564102563
@@ -440,9 +463,15 @@
             "LF-038": [
               1
             ]
+          },
+          "evidenceCounts": {
+            "total": 42,
+            "union": 8,
+            "single_chunk": 8
           }
         }
       }
     }
-  }
+  },
+  "scoringVersion": 2
 }
