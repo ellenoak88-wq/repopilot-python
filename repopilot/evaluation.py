@@ -47,6 +47,7 @@ class Evaluation:
         except (FileNotFoundError, json.JSONDecodeError):
             return False
         return (isinstance(saved, dict) and saved.get("split") == split
+                and (not self.snapshot.get("target_chunker") or saved.get("chunkerVersion") == self.snapshot["target_chunker"])
                 and saved.get("snapshot") == self.snapshot and saved.get("datasetSha256") == self.digest)
 
     def matches(self, repo):

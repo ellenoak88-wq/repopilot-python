@@ -2,5 +2,7 @@
   "repo": "Tencent/LoopForge",
   "repo_sha": "e89cda9804643d3631e77652d1bca47a079adb69",
   "index_version": "b61f035f9dddee778a919043edd85fda7d8a053094332fcfdcbe4ff9dd28ebe4",
-  "format_version": 1
+  "format_version": 1,
+  "dataset_version": 2,
+  "target_chunker": "structure-v1"
 }

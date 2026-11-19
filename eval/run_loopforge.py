@@ -11,6 +11,7 @@ from contextlib import closing
 from pathlib import Path
 from statistics import mean
 
+from repopilot.chunking import CHUNKER_VERSION
 from repopilot.embeddings import make_embedder
 from repopilot.hybrid import HybridRetrieval
 from repopilot.store import Store
@@ -152,7 +153,7 @@ async def run(args):
             store.close()
     report = (dict(snapshot=snapshot, split=args.split, k=5, results={r["mode"]: r for r in results})
               if args.mode == "compare" else results[0])
-    report.update(datasetSha256=digest, completedAt=datetime.now(timezone.utc).isoformat(),
+    report.update(chunkerVersion=CHUNKER_VERSION, datasetSha256=digest, completedAt=datetime.now(timezone.utc).isoformat(),
                   embeddingModel=retriever.embedder.identity if "hybrid" in modes else None)
     output = args.output or src.parent / "evaluations" / f"loopforge-{args.split}-{args.mode}.json"
     write_report(output, report)

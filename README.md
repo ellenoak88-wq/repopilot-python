@@ -73,13 +73,15 @@ uv sync --frozen
 uv run pytest -q
 ```
 
-模块：`server.py` 提供 HTTP/SSE 接口；`agent.py` 编排 RAG 和工具调用；`stream.py` 解析模型流；`github.py` 导入仓库；`retrieval.py` 切片与 BM25；`store.py` 管理数据与会话；`models.py` 配置聊天模型；`embeddings.py` 运行本地向量模型；`hybrid.py` 管理向量索引和排名融合；`learning.py` 管理个人学习档案、版本复核与经验召回；`sections.py` 管理项目分区和归属。全部位于 `repopilot/`。
+模块：`server.py` 提供 HTTP/SSE 接口；`agent.py` 编排 RAG 和工具调用；`stream.py` 解析模型流；`github.py` 导入仓库；`chunking.py` 根据文件结构切片，`retrieval.py` 执行 BM25；`store.py` 管理数据与会话；`models.py` 配置聊天模型；`embeddings.py` 运行本地向量模型；`hybrid.py` 管理向量索引和排名融合；`learning.py` 管理个人学习档案、版本复核与经验召回；`sections.py` 管理项目分区和归属。全部位于 `repopilot/`。
 
 升级依赖后执行 `uv lock`，再用 `uv export --frozen --no-dev --no-emit-project --output-file requirements.txt` 和 `uv export --frozen --no-emit-project --output-file requirements-dev.txt` 同步 pip/Docker 锁定文件。
 
 ## 范围
 
 面向个人本地使用，未实现多用户认证。只运行一个 Uvicorn worker，以保持导入和生成的操作锁；不要直接发布到公网。导入的仓库内容仅作为不可信证据，不会执行其中的代码或命令。首页手动重新导入和项目页同步均保留旧会话；旧回答保留版本和摘录，不作为新版源码的当前上下文。「发现项目」入口会复用已导入仓库，保留现有会话和进度。
+
+Go、Python、JS/TS 等代码按类型、函数、方法或测试用例切片。Markdown 按标题层级，工作流与 Compose 按任务或服务，JSON、TOML、Makefile、Dockerfile 按键、配置表、目标或构建阶段切片。超长单元优先在语句或段落边界续分，缺乏可识别边界时采用最多 65 行、重叠 12 行的窗口。检索带上符号名或标题路径，引用仍对应源文件的原始行。切片算法更新会使旧向量索引过期，已有会话引用保留原始行号。
 
 关键词检索使用 BM25；混合检索使用本地 FastEmbed 模型，向量存入 SQLite，无需外部向量数据库。首次建立向量索引需下载模型权重，缺失或过期时明确回退 BM25；代码导入默认最多 1,000 个文件及 50 MB 文本，可通过 `REPO_MAX_FILES`（1–5,000）与 `REPO_MAX_TOTAL_BYTES`（1,000,000–200,000,000）配置；构建前使用模型分词器预检窗口总数，默认上限为 150,000（`REPO_MAX_VECTOR_WINDOWS`）。向量分批写入 SQLite，只有全部成功才切换索引版本；失败可重试。查询按批读取，新旧格式均可检索。原生前端和第三方 Markdown 库来自 Node.js 版；第三方许可证保留在 `public/vendor/`。
 
