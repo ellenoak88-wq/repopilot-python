@@ -41,7 +41,15 @@ async def ask_agent(*, repo, files, chunks, question, history=None, config=None,
     async def retrieve(query, label):
         if retriever:
             result = await retriever(query, 5)
-            record(label, f"{'BM25 + 向量 · RRF' if result['actual'] == 'hybrid' else 'BM25'} 检索得到 {len(result['items'])} 个片段" + (f"；{result['warning']}" if result['warning'] else ""))
+            details = [f"{'BM25 + 向量 · RRF' if result['actual'] == 'hybrid' else 'BM25'} 检索得到 {len(result['items'])} 个片段"]
+            rewrite = result.get("rewrite", {})
+            if rewrite.get("contextual"):
+                details.append("改写追问时参考了本会话上一问")
+            if rewrite.get("terms"):
+                details.append("扩展检索词：" + " ".join(rewrite["terms"]))
+            if result.get("warning"):
+                details.append(result["warning"])
+            record(label, "；".join(details))
             return [cite(c) for c in result['items']]
         found = [cite(c) for c in search(chunks, query, 5)]
         record(label, f"BM25 检索得到 {len(found)} 个片段")

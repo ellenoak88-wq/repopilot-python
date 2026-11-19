@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 
+from .query_rewrite import rewrite_query
 from .retrieval import search
 from .store import now
 
@@ -108,12 +109,14 @@ class HybridRetrieval:
                                       (repo["id"], signature, self.embedder.identity, len(chunks), len(vectors), now(), payload))
             return self.status(repo, chunks)
 
-    async def retrieve(self, repo, chunks, query, limit=6, mode="hybrid", path_filter=""):
+    async def retrieve(self, repo, chunks, query, limit=6, mode="hybrid", path_filter="", previous_question=""):
         if mode not in ("hybrid", "bm25"):
             raise ValueError("检索方式必须为 hybrid 或 bm25。")
         scoped = [c for c in chunks if path_filter.lower() in c["path"].lower()]
-        lexical = search(scoped, query, max(30, limit * 3))
-        fallback = dict(items=[{**c, "channels": ["bm25"]} for c in lexical[:limit]], requested=mode, actual="bm25", warning="")
+        rewrite = rewrite_query(query, previous_question) if mode == "hybrid" else None
+        changes = dict(terms=list(rewrite.terms), contextual=rewrite.contextual) if rewrite else {}
+        lexical = search(scoped, rewrite.lexical if rewrite else query, max(30, limit * 3))
+        fallback = dict(items=[{**c, "channels": ["bm25"]} for c in lexical[:limit]], requested=mode, actual="bm25", warning="", rewrite=changes)
         if mode == "bm25" or not scoped:
             return fallback
         state = self.status(repo, chunks)
@@ -123,11 +126,11 @@ class HybridRetrieval:
         try:
             row = self.store.db.execute("SELECT payload FROM vector_indexes WHERE repo=?", (repo["id"],)).fetchone()
             index = json.loads(row["payload"])
-            query_vector = normalize(await self.embedder.query(query), index["dimension"])
+            query_vector = normalize(await self.embedder.query(rewrite.semantic), index["dimension"])
             allowed = {i for i, c in enumerate(chunks) if path_filter.lower() in c["path"].lower()}
             ranked = await asyncio.to_thread(dense_scores, index["vectors"], query_vector, index["owners"], allowed)
             semantic = [{**chunks[i], "score": score} for i, score in ranked[:max(30, limit * 3)]]
-            return dict(items=fuse(lexical, semantic, limit), requested=mode, actual="hybrid", warning="")
+            return dict(items=fuse(lexical, semantic, limit), requested=mode, actual="hybrid", warning="", rewrite=changes)
         except Exception:
             # Cancellation is BaseException and deliberately propagates.
             fallback["warning"] = "本地向量检索暂不可用，已使用 BM25；可重试或重建向量索引。"

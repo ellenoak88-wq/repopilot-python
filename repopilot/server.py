@@ -218,7 +218,9 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
         indexed_chunks = store.chunks(repo["id"])
 
         async def retrieve(query, limit):
-            return await hybrid.retrieve(repo, indexed_chunks, query, limit, mode=retrieval_mode)
+            previous = recent[-1]["question"] if recent and query == question else ""
+            return await hybrid.retrieve(repo, indexed_chunks, query, limit, mode=retrieval_mode,
+                                         previous_question=previous)
         kwargs = dict(repo=repo, files=store.files(repo["id"]), chunks=indexed_chunks, question=question, retriever=retrieve,
                       history=recent, summary=summary, memories=memories, config=config)
         if hints := auto_wiki.hints(repo, question):
