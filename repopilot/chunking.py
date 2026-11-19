@@ -52,7 +52,8 @@ def _tree_structure(ext, content, mark, soft):
                     name = receiver[-1].lstrip("*") + "." + name
             if not name:
                 name = _text(node).split("{")[0]
-        elif kind == "variable_declarator":
+        elif kind == "variable_declarator" and not parent:
+            # Local callbacks belong with the containing implementation or test.
             value = node.child_by_field_name("value")
             if value and value.type in ("arrow_function", "function_expression", "class"):
                 name = _text(node.child_by_field_name("name"))
