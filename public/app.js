@@ -369,9 +369,18 @@ function updateEfforts(reset = true) {
 $('model-choice').onchange = () => updateEfforts();
 $('model-list-toggle').onclick = () => setModelList($('model-choice').classList.contains('hidden'), true);
 function setModelList(open, focus = false) {
-  $('model-choice').classList.toggle('hidden', !open);
+  const list = $('model-choice');
+  list.classList.toggle('hidden', !open);
   $('model-list-toggle').setAttribute('aria-expanded', String(open));
-  if (focus) $(open ? 'model-choice' : 'model-list-toggle').focus();
+  if (focus) (open ? list : $('model-list-toggle')).focus({preventScroll: true});
+  const selected = list.selectedOptions[0];
+  if (open && selected) {
+    const row = selected.getBoundingClientRect();
+    const top = list.getBoundingClientRect().top + list.clientTop;
+    const bottom = top + list.clientHeight;
+    if (row.top < top) list.scrollTop += row.top - top;
+    else if (row.bottom > bottom) list.scrollTop += Math.ceil(row.bottom - bottom);
+  }
 }
 function finishModelChoice() {
   setModelList(false, true);

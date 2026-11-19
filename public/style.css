@@ -35,7 +35,7 @@
 .composer .model-list { width:100%; max-width:none; padding:0; border:1px solid #e6e6eb; border-radius:6px; text-align:left; font-family:inherit; font-size:12px; overflow-y:auto; }
 .picker-row button:focus-visible { outline:none; }
 .model-list option { padding:4px 8px; text-align:left; }
-.model-list option:checked { background:#eaeaf1; color:#303442; }
+.model-list option:checked { background:#dcdce9; color:#29293f; font-weight:600; }
 .picker-row i { position:absolute; right:12px; transform:rotate(45deg); pointer-events:none; }
 .picker-custom input { flex:1; min-width:0; padding:6px; }
 .picker-refresh { display:block; margin:4px 7px; padding:4px; color:var(--green); border:0; background:transparent; font-size:11px; }
