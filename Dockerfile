@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir --require-hashes -r requirements-dev.txt
 COPY pyproject.toml ./
 COPY repopilot ./repopilot
 COPY public ./public
+COPY eval ./eval
 COPY tests ./tests
 RUN python -m pytest -q && touch /tests-passed
 

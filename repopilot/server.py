@@ -14,6 +14,7 @@ from .agent import ask_agent
 from .checklist import ChecklistConflict, ChecklistService
 from .discovery import DiscoveryService, DiscoveryUnavailable
 from .embeddings import make_embedder
+from .evaluation import Evaluation
 from .hybrid import HybridRetrieval
 from .learning import LearningService, LearningConflict, memory_refs
 from .conversation import HISTORY_LIMIT, RECENT_TURNS, summarize
@@ -105,6 +106,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
     discovery = DiscoveryService(store, transport=discovery_transport)
     hybrid = HybridRetrieval(store, embedder or make_embedder(os.getenv("DATA_DIR", str(ROOT / "data"))))
     jobs, tasks = {}, set()
+    evaluation = Evaluation(store)
     state = {"busy": False}
 
     @asynccontextmanager
@@ -114,6 +116,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
             if repo:
                 auto_wiki.request(repo)
         yield
+        await evaluation.close()
         await auto_wiki.close()
         for task in tasks:
             task.cancel()
@@ -340,7 +343,18 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                 if path == "/api/repos":
                     return sections.repositories()
                 if path == "/api/retrieval/status":
-                    return hybrid.status(get_repo(q.get("repo")))
+                    repo = get_repo(q.get("repo"))
+                    return {**hybrid.status(repo), "evaluation": evaluation.status(repo)}
+                if path in ("/api/evaluation/status", "/api/evaluation/report"):
+                    repo = get_repo(q.get("repo"))
+                    if not evaluation.supports(repo):
+                        raise ApiError(404, "此项目没有配置评测数据集。")
+                    if path.endswith("/status"):
+                        return evaluation.status(repo)
+                    report = evaluation.report(q.get("split", "dev"))
+                    if not report.is_file():
+                        raise ApiError(404, "还没有已完成的报告。")
+                    return FileResponse(report, media_type="application/json", filename=report.name)
                 if path == "/api/checklist":
                     return checklists.view(get_repo(q.get("repo")))
                 if path == "/api/search":
@@ -387,6 +401,15 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     return store.sessions(repo["id"], q.get("q", "")[:200])
             else:
                 body = await body_json(request)
+                if path == "/api/evaluation/run":
+                    repo = get_repo(body.get("repo"))
+                    if not evaluation.supports(repo):
+                        raise ApiError(404, "此项目没有配置评测数据集。")
+                    try:
+                        job = evaluation.start(repo, body.get("split", "dev"))
+                    except RuntimeError as exc:
+                        raise ApiError(409, str(exc)) from exc
+                    return JSONResponse(job, status_code=202)
                 if path == "/api/wiki/draft":
                     return wiki.draft(get_repo(body.get("repo")), body.get("chatId"))
                 if path == "/api/wiki/delete":
