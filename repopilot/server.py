@@ -358,7 +358,7 @@ def create_app(*, store=None, importer=import_github, agent=ask_agent, port=None
                     result = search_files(indexed_files, query, mode=mode, path_filter=path_filter, limit=limit,
                                           candidates=retrieved["items"] if retrieved else None)
                     if retrieved:
-                        result["retrieval"] = {k: retrieved[k] for k in ("requested", "actual", "warning")}
+                        result["retrieval"] = {k: retrieved[k] for k in ("requested", "actual", "warning", "rewrite", "candidateCount")}
                         result["candidateLimit"] = 150
                     return {**result, "repo": repo["id"], "sha": repo["sha"], "partial": repo.get("partial", False)}
                 if path == "/api/file":

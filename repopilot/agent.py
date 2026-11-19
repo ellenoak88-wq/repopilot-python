@@ -47,6 +47,8 @@ async def ask_agent(*, repo, files, chunks, question, history=None, config=None,
                 details.append("改写追问时参考了本会话上一问")
             if rewrite.get("terms"):
                 details.append("扩展检索词：" + " ".join(rewrite["terms"]))
+            if "candidateCount" in result:
+                details.append(f"本地重排：{result['candidateCount']} 个候选 → {len(result['items'])} 个片段")
             if result.get("warning"):
                 details.append(result["warning"])
             record(label, "；".join(details))

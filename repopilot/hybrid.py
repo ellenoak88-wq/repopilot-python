@@ -5,6 +5,7 @@ import json
 import math
 
 from .query_rewrite import rewrite_query
+from .rerank import rerank
 from .retrieval import search
 from .store import now
 
@@ -113,25 +114,36 @@ class HybridRetrieval:
         if mode not in ("hybrid", "bm25"):
             raise ValueError("检索方式必须为 hybrid 或 bm25。")
         scoped = [c for c in chunks if path_filter.lower() in c["path"].lower()]
-        rewrite = rewrite_query(query, previous_question) if mode == "hybrid" else None
-        changes = dict(terms=list(rewrite.terms), contextual=rewrite.contextual) if rewrite else {}
-        lexical = search(scoped, rewrite.lexical if rewrite else query, max(30, limit * 3))
-        fallback = dict(items=[{**c, "channels": ["bm25"]} for c in lexical[:limit]], requested=mode, actual="bm25", warning="", rewrite=changes)
-        if mode == "bm25" or not scoped:
-            return fallback
-        state = self.status(repo, chunks)
-        if state["state"] != "ready":
-            fallback["warning"] = "向量索引尚未建立，已使用 BM25。" if state["state"] == "missing" else "向量索引已过期，已使用 BM25；请重建索引。"
-            return fallback
-        try:
-            row = self.store.db.execute("SELECT payload FROM vector_indexes WHERE repo=?", (repo["id"],)).fetchone()
-            index = json.loads(row["payload"])
-            query_vector = normalize(await self.embedder.query(rewrite.semantic), index["dimension"])
-            allowed = {i for i, c in enumerate(chunks) if path_filter.lower() in c["path"].lower()}
-            ranked = await asyncio.to_thread(dense_scores, index["vectors"], query_vector, index["owners"], allowed)
-            semantic = [{**chunks[i], "score": score} for i, score in ranked[:max(30, limit * 3)]]
-            return dict(items=fuse(lexical, semantic, limit), requested=mode, actual="hybrid", warning="", rewrite=changes)
-        except Exception:
-            # Cancellation is BaseException and deliberately propagates.
-            fallback["warning"] = "本地向量检索暂不可用，已使用 BM25；可重试或重建向量索引。"
-            return fallback
+        if mode == "bm25":
+            items = [{**c, "channels": ["bm25"]} for c in search(scoped, query, limit)]
+            return dict(items=items, requested=mode, actual=mode, warning="")
+
+        rewrite = rewrite_query(query, previous_question)
+        pool_size = max(30, limit * 3)
+        lexical = search(scoped, rewrite.lexical, pool_size)
+        candidates = [{**c, "channels": ["bm25"]} for c in lexical]
+        actual, warning = "bm25", ""
+        if scoped:
+            state = self.status(repo, chunks)["state"]
+            if state == "ready":
+                try:
+                    semantic = await self._vector_candidates(repo, chunks, rewrite.semantic, pool_size, path_filter)
+                except Exception:
+                    # Cancellation is BaseException and deliberately propagates.
+                    warning = "本地向量检索暂不可用，已使用 BM25；可重试或重建向量索引。"
+                else:
+                    candidates = fuse(lexical, semantic, pool_size)
+                    actual = "hybrid"
+            else:
+                warning = "向量索引尚未建立，已使用 BM25。" if state == "missing" else "向量索引已过期，已使用 BM25；请重建索引。"
+        return dict(items=rerank(rewrite.semantic, candidates, limit), requested=mode, actual=actual,
+                    warning=warning, candidateCount=len(candidates),
+                    rewrite=dict(terms=list(rewrite.terms), contextual=rewrite.contextual))
+
+    async def _vector_candidates(self, repo, chunks, query, limit, path_filter):
+        row = self.store.db.execute("SELECT payload FROM vector_indexes WHERE repo=?", (repo["id"],)).fetchone()
+        index = json.loads(row["payload"])
+        vector = normalize(await self.embedder.query(query), index["dimension"])
+        allowed = {i for i, chunk in enumerate(chunks) if path_filter.lower() in chunk["path"].lower()}
+        ranked = await asyncio.to_thread(dense_scores, index["vectors"], vector, index["owners"], allowed)
+        return [{**chunks[i], "score": score} for i, score in ranked[:limit]]

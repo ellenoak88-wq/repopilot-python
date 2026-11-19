@@ -105,7 +105,11 @@ export function createExplorer(openFile) {
     $('code-search-status').textContent = data.total
       ? `「${data.query}」找到 ${data.total} 个片段，涉及 ${data.fileCount} 个文件。${data.truncated ? `显示前 ${data.results.length} 条，可添加路径筛选缩小范围。` : ''}${scope}`
       : `未找到「${data.query}」。可缩短关键词、调整路径，或切换到“相关片段”。${scope}`;
-    if (data.retrieval) $('code-search-status').textContent += ` ${data.retrieval.actual === 'hybrid' ? 'BM25 + 向量，RRF 排序。' : '实际使用 BM25。'}${data.retrieval.warning || ''}候选池最多 ${data.candidateLimit} 个片段。`;
+    if (data.retrieval) {
+      const { actual, warning, candidateCount } = data.retrieval;
+      const method = actual === 'hybrid' ? 'BM25 + 向量融合' : 'BM25';
+      $('code-search-status').textContent += ` ${method}召回，本地重排了 ${candidateCount} 个候选片段。${warning || ''}`;
+    }
   }
 
   $('code-search-form').onsubmit = async event => {
