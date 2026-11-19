@@ -68,6 +68,15 @@
         <div class="retrieval-heading"><div><strong id="retrieval-state" role="status">正在检查向量索引…</strong><p id="retrieval-info"></p></div><label>问答检索方式<select id="retrieval-mode"><option value="hybrid">混合检索 · BM25 + 向量</option><option value="bm25">关键词检索 · BM25</option></select></label></div>
         <div class="retrieval-actions"><button id="retrieval-build" type="button" class="primary">建立向量索引</button><button id="retrieval-refresh" type="button" class="secondary">检查索引状态</button><span>本地计算，无需 Embedding API Key；首次建立需下载约 220 MB 模型权重及分词文件。</span></div>
         <progress id="retrieval-progress" class="hidden" max="100" value="0" aria-label="向量索引进度"></progress>
+        <fieldset id="evaluation-panel" class="hidden">
+          <legend>检索评测</legend>
+          <div class="retrieval-actions">
+            <label>题集 <select id="evaluation-split"><option value="dev">开发集</option><option value="test">保留测试集</option></select></label>
+            <button id="evaluation-run" type="button" class="secondary">运行对照评测</button>
+            <a id="evaluation-download" class="hidden" download>下载最近报告</a>
+          </div>
+          <p id="evaluation-status" role="status"></p>
+        </fieldset>
       </section>
 
 <details id="checklist-panel" class="checklist-panel">

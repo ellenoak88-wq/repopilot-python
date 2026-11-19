@@ -10,10 +10,13 @@
 
 ## 使用
 
+打开 RepoPilot 的 LoopForge 项目，在「混合检索设置 → 检索评测」选择题集，点击「运行对照评测」。完成后点击「下载最近报告」。同一次运行的 BM25 和混合检索指标写入一份 JSON，默认宿主路径为 `data/evaluations/loopforge-dev-compare.json`，保留集文件名使用 `test`。每个划分只在新一轮成功时替换最近报告；修改 Compose 数据目录后，报告跟随该目录。
+
 在 RepoPilot 项目根目录用 PowerShell 7 运行：
 
 ```powershell
 .\.venv\Scripts\python.exe -m eval.run_loopforge
+.\.venv\Scripts\python.exe -m eval.run_loopforge --mode compare
 .\.venv\Scripts\python.exe -m eval.run_loopforge --mode bm25 --output bm25-dev.json
 .\.venv\Scripts\python.exe -m eval.run_loopforge --mode hybrid --output hybrid-dev.json
 ```
@@ -22,6 +25,12 @@
 
 默认从 `data/repopilot.db` 只读验证全部标注。使用其他数据目录时传 `--db`；模型缓存支持 `EMBEDDING_CACHE_DIR`。评分在数据库的一致性临时副本上进行。混合检索需先建好相同快照的真实向量索引；出现降级时命令会提示原因并停止评分。报告含逐题前五条路径和行号、各证据组首次出现的排名、平均证据召回率、完整命中率和 MRR@5。现场问题不计入召回分母，可单独评估 Agent 能否指出证据不足。
 
-日常调参使用默认的 `dev`。锁定方案后再传 `--split test` 复测保留集。当前题目以独立首轮查询为单位，不衡量多轮追问或回答生成质量。
+日常调参使用默认的 `dev`。锁定方案后再传 `--split test` 复测保留集。开发集报告包含逐题排名；保留集报告仅含汇总指标与题数。评测只复制目标仓库源码和当前向量索引，每题只把问题文本传给检索器，查询之间不携带会话、Wiki、学习档案或标准证据。当前任务衡量首轮源码召回。
+
+## 降低背题风险
+
+同一事实的改写题及共享核心证据的题应放在同一个划分。开发期间只查看开发集失败样本；锁定版本后再测保留集。随仓库提交的保留题可被拥有仓库访问权的人或编码助手读取，隐去逐题分数只能减少调参反馈。正式验收宜另备未公开的新题和新仓库版本，交由独立评测方维护，并限制读取权限。
+
+评测服务支持 `REPOPILOT_EVAL_DIR` 指向仓库之外的评测目录，其中放同名的 `loopforge.snapshot.json` 和 `loopforge.jsonl`，格式与本目录一致。Docker 可将独立题库只读挂载，再把该变量设置为容器内路径。题库和评分报告不要加入项目索引、Wiki 或微调语料。每份报告记录题集哈希，便于区分换题与算法变化。使用拥有宿主机文件读取权限的编码助手时，应在独立账户或评测机保管真正的盲测集。
 
 `loopforge.dev-baseline.json` 保存本次开发集对照。每道题按证据组列出首次命中名次，`null` 表示前五条未找到该组。标注复核接受了安装脚本生成的本地数据库连接地址作为 LF-004 的等价证据。保留测试集未参与此次评分。
