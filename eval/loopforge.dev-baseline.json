@@ -1,156 +1,447 @@
 {
-  "retriever_commit": "ae1fcf1",
-  "snapshot": "e89cda9804643d3631e77652d1bca47a079adb69",
+  "snapshot": {
+    "repo": "Tencent/LoopForge",
+    "repo_sha": "e89cda9804643d3631e77652d1bca47a079adb69",
+    "index_version": "b61f035f9dddee778a919043edd85fda7d8a053094332fcfdcbe4ff9dd28ebe4",
+    "format_version": 1,
+    "dataset_version": 2,
+    "target_chunker": "structure-v1"
+  },
+  "datasetSha256": "fc57ce7aae662c997013dc10a8732a25c0e32d88c42aa0ada0a900ffc65a80b3",
   "split": "dev",
   "k": 5,
-  "scored": 18,
-  "excluded": [
-    "LF-019",
-    "LF-020"
-  ],
-  "results": {
-    "bm25": {
-      "metrics": {
-        "recall": 0.05555555555555555,
-        "complete": 0.05555555555555555,
-        "reciprocal_rank": 0.018518518518518517
-      },
-      "cases": {
-        "LF-001": [
-          null
-        ],
-        "LF-002": [
-          null
-        ],
-        "LF-003": [
-          null,
-          null
-        ],
-        "LF-004": [
-          null,
-          null
-        ],
-        "LF-005": [
-          null
-        ],
-        "LF-006": [
-          null
-        ],
-        "LF-007": [
-          null,
-          null
-        ],
-        "LF-008": [
-          null,
-          null
-        ],
-        "LF-009": [
-          null
-        ],
-        "LF-010": [
-          null,
-          null
-        ],
-        "LF-011": [
-          null
-        ],
-        "LF-012": [
-          null,
-          null
-        ],
-        "LF-013": [
-          null,
-          null
-        ],
-        "LF-014": [
-          null,
-          null
-        ],
-        "LF-015": [
-          null
-        ],
-        "LF-016": [
-          null,
-          null
-        ],
-        "LF-017": [
-          3
-        ],
-        "LF-018": [
-          null
-        ]
+  "embeddingModel": "fastembed-0.9.1:sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2:faf4aa4225822f3bc6376869cb1164e8e3feedd0:overflow-v1",
+  "layouts": {
+    "line-window-v1": {
+      "retrieverCommit": "d78432b",
+      "chunkCount": 9413,
+      "results": {
+        "bm25": {
+          "scored": 26,
+          "excludedCount": 2,
+          "metrics": {
+            "recall": 0.07692307692307693,
+            "complete": 0.07692307692307693,
+            "reciprocal_rank": 0.05128205128205128
+          },
+          "cases": {
+            "LF-001": [
+              null
+            ],
+            "LF-002": [
+              null
+            ],
+            "LF-003": [
+              null,
+              null
+            ],
+            "LF-004": [
+              null,
+              null
+            ],
+            "LF-005": [
+              null
+            ],
+            "LF-006": [
+              null
+            ],
+            "LF-007": [
+              null,
+              null
+            ],
+            "LF-008": [
+              null,
+              null
+            ],
+            "LF-009": [
+              null
+            ],
+            "LF-010": [
+              null,
+              null
+            ],
+            "LF-011": [
+              null
+            ],
+            "LF-012": [
+              null,
+              null
+            ],
+            "LF-013": [
+              null,
+              null
+            ],
+            "LF-014": [
+              null,
+              null
+            ],
+            "LF-015": [
+              null
+            ],
+            "LF-016": [
+              null,
+              null
+            ],
+            "LF-017": [
+              3
+            ],
+            "LF-018": [
+              null
+            ],
+            "LF-031": [
+              null,
+              null
+            ],
+            "LF-032": [
+              null,
+              null
+            ],
+            "LF-033": [
+              null,
+              null
+            ],
+            "LF-034": [
+              null,
+              null,
+              null
+            ],
+            "LF-035": [
+              null
+            ],
+            "LF-036": [
+              1
+            ],
+            "LF-037": [
+              null,
+              null,
+              null
+            ],
+            "LF-038": [
+              null
+            ]
+          }
+        },
+        "hybrid": {
+          "scored": 26,
+          "excludedCount": 2,
+          "metrics": {
+            "recall": 0.17307692307692307,
+            "complete": 0.15384615384615385,
+            "reciprocal_rank": 0.09743589743589744
+          },
+          "cases": {
+            "LF-001": [
+              null
+            ],
+            "LF-002": [
+              null
+            ],
+            "LF-003": [
+              null,
+              null
+            ],
+            "LF-004": [
+              null,
+              5
+            ],
+            "LF-005": [
+              null
+            ],
+            "LF-006": [
+              null
+            ],
+            "LF-007": [
+              null,
+              null
+            ],
+            "LF-008": [
+              null,
+              null
+            ],
+            "LF-009": [
+              null
+            ],
+            "LF-010": [
+              null,
+              null
+            ],
+            "LF-011": [
+              null
+            ],
+            "LF-012": [
+              null,
+              null
+            ],
+            "LF-013": [
+              null,
+              null
+            ],
+            "LF-014": [
+              null,
+              null
+            ],
+            "LF-015": [
+              null
+            ],
+            "LF-016": [
+              null,
+              null
+            ],
+            "LF-017": [
+              1
+            ],
+            "LF-018": [
+              null
+            ],
+            "LF-031": [
+              null,
+              null
+            ],
+            "LF-032": [
+              null,
+              null
+            ],
+            "LF-033": [
+              null,
+              null
+            ],
+            "LF-034": [
+              null,
+              null,
+              null
+            ],
+            "LF-035": [
+              null
+            ],
+            "LF-036": [
+              2
+            ],
+            "LF-037": [
+              3,
+              3,
+              3
+            ],
+            "LF-038": [
+              2
+            ]
+          }
+        }
       }
     },
-    "hybrid": {
-      "metrics": {
-        "recall": 0.08333333333333333,
-        "complete": 0.05555555555555555,
-        "reciprocal_rank": 0.06666666666666667
-      },
-      "cases": {
-        "LF-001": [
-          null
-        ],
-        "LF-002": [
-          null
-        ],
-        "LF-003": [
-          null,
-          null
-        ],
-        "LF-004": [
-          null,
-          5
-        ],
-        "LF-005": [
-          null
-        ],
-        "LF-006": [
-          null
-        ],
-        "LF-007": [
-          null,
-          null
-        ],
-        "LF-008": [
-          null,
-          null
-        ],
-        "LF-009": [
-          null
-        ],
-        "LF-010": [
-          null,
-          null
-        ],
-        "LF-011": [
-          null
-        ],
-        "LF-012": [
-          null,
-          null
-        ],
-        "LF-013": [
-          null,
-          null
-        ],
-        "LF-014": [
-          null,
-          null
-        ],
-        "LF-015": [
-          null
-        ],
-        "LF-016": [
-          null,
-          null
-        ],
-        "LF-017": [
-          1
-        ],
-        "LF-018": [
-          null
-        ]
+    "structure-v1": {
+      "retrieverCommit": "58d5c08",
+      "chunkCount": 30469,
+      "results": {
+        "bm25": {
+          "scored": 26,
+          "excludedCount": 2,
+          "metrics": {
+            "recall": 0.11538461538461539,
+            "complete": 0.11538461538461539,
+            "reciprocal_rank": 0.07692307692307693
+          },
+          "cases": {
+            "LF-001": [
+              null
+            ],
+            "LF-002": [
+              null
+            ],
+            "LF-003": [
+              null,
+              null
+            ],
+            "LF-004": [
+              null,
+              null
+            ],
+            "LF-005": [
+              null
+            ],
+            "LF-006": [
+              null
+            ],
+            "LF-007": [
+              null,
+              null
+            ],
+            "LF-008": [
+              null,
+              null
+            ],
+            "LF-009": [
+              null
+            ],
+            "LF-010": [
+              null,
+              null
+            ],
+            "LF-011": [
+              null
+            ],
+            "LF-012": [
+              null,
+              null
+            ],
+            "LF-013": [
+              null,
+              null
+            ],
+            "LF-014": [
+              null,
+              null
+            ],
+            "LF-015": [
+              null
+            ],
+            "LF-016": [
+              null,
+              null
+            ],
+            "LF-017": [
+              2
+            ],
+            "LF-018": [
+              null
+            ],
+            "LF-031": [
+              null,
+              null
+            ],
+            "LF-032": [
+              null,
+              null
+            ],
+            "LF-033": [
+              null,
+              null
+            ],
+            "LF-034": [
+              null,
+              null,
+              null
+            ],
+            "LF-035": [
+              null
+            ],
+            "LF-036": [
+              1
+            ],
+            "LF-037": [
+              null,
+              null,
+              null
+            ],
+            "LF-038": [
+              2
+            ]
+          }
+        },
+        "hybrid": {
+          "scored": 26,
+          "excludedCount": 2,
+          "metrics": {
+            "recall": 0.21153846153846154,
+            "complete": 0.19230769230769232,
+            "reciprocal_rank": 0.15064102564102563
+          },
+          "cases": {
+            "LF-001": [
+              null
+            ],
+            "LF-002": [
+              null
+            ],
+            "LF-003": [
+              null,
+              null
+            ],
+            "LF-004": [
+              null,
+              3
+            ],
+            "LF-005": [
+              null
+            ],
+            "LF-006": [
+              4
+            ],
+            "LF-007": [
+              null,
+              null
+            ],
+            "LF-008": [
+              null,
+              null
+            ],
+            "LF-009": [
+              null
+            ],
+            "LF-010": [
+              null,
+              null
+            ],
+            "LF-011": [
+              null
+            ],
+            "LF-012": [
+              null,
+              null
+            ],
+            "LF-013": [
+              null,
+              null
+            ],
+            "LF-014": [
+              null,
+              null
+            ],
+            "LF-015": [
+              null
+            ],
+            "LF-016": [
+              null,
+              null
+            ],
+            "LF-017": [
+              1
+            ],
+            "LF-018": [
+              null
+            ],
+            "LF-031": [
+              null,
+              null
+            ],
+            "LF-032": [
+              null,
+              null
+            ],
+            "LF-033": [
+              null,
+              null
+            ],
+            "LF-034": [
+              null,
+              null,
+              null
+            ],
+            "LF-035": [
+              null
+            ],
+            "LF-036": [
+              1
+            ],
+            "LF-037": [
+              3,
+              3,
+              3
+            ],
+            "LF-038": [
+              1
+            ]
+          }
+        }
       }
     }
   }
