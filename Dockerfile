@@ -19,6 +19,7 @@ RUN groupadd --gid 1000 app && useradd --uid 1000 --gid app --create-home app \
 COPY --from=test /tests-passed /tests-passed
 COPY --chown=app:app repopilot ./repopilot
 COPY --chown=app:app public ./public
+COPY --chown=app:app eval ./eval
 USER app
 ENV HOST=0.0.0.0 PORT=3211 DATA_DIR=/app/data
 EXPOSE 3211

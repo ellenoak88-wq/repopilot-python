@@ -7,6 +7,11 @@
 !repopilot/**
 !public/
 !public/**
+!eval/
+!eval/loopforge.jsonl
+!eval/loopforge.snapshot.json
+!eval/run_loopforge.py
+!eval/README.md
 !tests/
 !tests/**
 **/__pycache__/
