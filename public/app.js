@@ -323,7 +323,14 @@ $('stop-button').onclick = () => chatController?.abort();
 
 $('chat-form').onsubmit = e => { e.preventDefault(); submitQuestion($('question').value); };
 $('question').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submitQuestion($('question').value); } };
-document.querySelectorAll('[data-question]').forEach(button => button.onclick = () => submitQuestion(button.dataset.question));
+document.querySelectorAll('[data-question]').forEach(button => {
+  button.onclick = () => {
+    const input = $('question');
+    input.value = button.dataset.question;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  };
+});
 $('export-button').onclick = () => {
   if (!active) return;
   const text = `# ${active.id} · ${currentSession?.title || '探索笔记'}\n\nCommit: ${active.sha}\n\n` + history.map(h => `## ${h.question}\n\n回答版本：${h.repoSha || "未知"}${h.versionInferred ? "（迁移时推定）" : ""}\n\n${h.answer}\n\n### 参考来源\n${h.sources.map(s => `- [${s.id}] ${s.path}:${s.start}–${s.end}${s.url ? ` (${s.url})` : ''}`).join('\n')}`).join('\n\n---\n\n');
