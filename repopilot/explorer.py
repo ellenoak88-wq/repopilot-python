@@ -47,8 +47,9 @@ def search_files(files, query, *, mode="literal", path_filter="", limit=20, cand
                     hits.append({"path": file["path"], "start": max(1, number - 2), "end": min(len(lines), number + 2),
                                  "focusStart": number, "focusEnd": number, "matchedLines": [number]})
     else:
-        chunks = [c for f in scoped for c in chunk_file(f["path"], f["content"])]
-        candidates = search(chunks, query, len(chunks)) if candidates is None else candidates
+        if candidates is None:
+            chunks = [c for f in scoped for c in chunk_file(f["path"], f["content"])]
+            candidates = search(chunks, query, len(chunks))
         for chunk in candidates:
             # Overlapping chunks of one file should not dominate the results.
             if any(h["path"] == chunk["path"] and max(h["start"], chunk["start"]) <= min(h["end"], chunk["end"]) for h in hits):

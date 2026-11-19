@@ -9,6 +9,7 @@ import uuid
 from contextlib import closing
 from pathlib import Path
 
+from .chunking import CHUNKER_VERSION, search_text
 from .query_rewrite import rewrite_query
 from .rerank import rerank
 from .retrieval import search
@@ -22,7 +23,7 @@ def chunk_key(chunk):
 
 
 def fingerprint(repo, chunks, model):
-    value = [repo["sha"], model, [{k: c[k] for k in ("path", "start", "end", "text")} for c in chunks]]
+    value = [CHUNKER_VERSION, repo["sha"], model, [[*chunk_key(c), search_text(c)] for c in chunks]]
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
@@ -100,7 +101,7 @@ class HybridRetrieval:
             counts = []
             for start in range(0, len(chunks), 128):
                 progress(f"预检窗口：{start:,}/{len(chunks):,} 个片段", int(8 * start / len(chunks)))
-                texts = [c["text"] or " " for c in chunks[start:start + 128]]
+                texts = [search_text(c) for c in chunks[start:start + 128]]
                 batch_counts = await self.embedder.window_counts(texts)
                 if len(batch_counts) != len(texts) or any(type(c) is not int or c < 1 for c in batch_counts):
                     raise ValueError("分词器返回的窗口数量无效。")
@@ -139,7 +140,7 @@ class HybridRetrieval:
         for start in range(0, len(chunks), 16):
             batch = chunks[start:start + 16]
             seen = [0] * len(batch)
-            async for owners, vectors in self.embedder.document_batches([c["text"] or " " for c in batch]):
+            async for owners, vectors in self.embedder.document_batches([search_text(c) for c in batch]):
                 if not owners or len(owners) != len(vectors):
                     raise ValueError("向量服务返回了不完整的片段结果。")
                 for owner in owners:

@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .retrieval import chunk_file
+from .chunking import CHUNKER_VERSION, chunk_file
 
 
 def now() -> str:
@@ -28,6 +28,8 @@ class Store:
     def __init__(self, filename: str | Path):
         if str(filename) != ":memory:":
             Path(filename).parent.mkdir(parents=True, exist_ok=True)
+        self._chunk_key = None
+        self._chunks = []
         self.db = sqlite3.connect(str(filename), check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript("""
@@ -48,8 +50,11 @@ class Store:
                 self.db.execute("UPDATE chats SET session_id=? WHERE repo=? AND session_id IS NULL", (session["id"], row["id"]))
             self.db.execute("CREATE INDEX IF NOT EXISTS chats_session_idx ON chats(session_id,id)")
             for repo in self.list():
-                if not repo.get("indexVersion"):
-                    repo["indexVersion"] = index_version(repo.get("sha"), self.files(repo["id"]))
+                if not repo.get("indexVersion") or repo.get("chunkerVersion") != CHUNKER_VERSION:
+                    files = self.files(repo["id"])
+                    repo["indexVersion"] = repo.get("indexVersion") or index_version(repo.get("sha"), files)
+                    repo.update(chunkerVersion=CHUNKER_VERSION,
+                                chunkCount=sum(len(chunk_file(f["path"], f["content"])) for f in files))
                     self.db.execute("UPDATE repositories SET metadata=? WHERE id=?", (json.dumps(repo, ensure_ascii=False), repo["id"]))
                 for row in self.db.execute("SELECT id,payload FROM chats WHERE repo=?", (repo["id"],)).fetchall():
                     item = json.loads(row["payload"])
@@ -85,7 +90,7 @@ class Store:
         old = {f["path"]: f["content"] for f in self.files(meta["id"])}
         new = {f["path"]: f["content"] for f in files}
         stamp = now()
-        item = {**meta, "fileCount": len(files), "chunkCount": sum(len(chunk_file(f["path"], f["content"])) for f in files),
+        item = {**meta, "chunkerVersion": CHUNKER_VERSION, "fileCount": len(files), "chunkCount": sum(len(chunk_file(f["path"], f["content"])) for f in files),
                 "indexedAt": stamp, "indexVersion": index_version(meta.get("sha"), files)}
         item["lastSync"] = {"at": stamp, "previousSha": previous.get("sha") if previous else None,
                             "added": len(new.keys() - old.keys()), "removed": len(old.keys() - new.keys()),
@@ -118,7 +123,14 @@ class Store:
         return self._one("SELECT path,content FROM files WHERE repo=? AND path=?", (repo, path))
 
     def chunks(self, repo):
-        return [c for f in self.files(repo) for c in chunk_file(f["path"], f["content"])]
+        meta = self.get(repo)
+        if not meta:
+            return []
+        key = (repo, meta["indexVersion"], CHUNKER_VERSION)
+        if key != self._chunk_key:
+            self._chunks = [c for f in self.files(repo) for c in chunk_file(f["path"], f["content"])]
+            self._chunk_key = key
+        return [chunk.copy() for chunk in self._chunks]
 
     def sessions(self, repo, query=""):
         sql = """SELECT s.*, (SELECT COUNT(*) FROM chats c WHERE c.session_id=s.id) AS messageCount

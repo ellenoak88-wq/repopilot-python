@@ -3,6 +3,8 @@ import math
 import re
 from collections import Counter
 
+from .chunking import chunk_file, search_text
+
 ALIASES = [
     (r"启动|安装|运行|上手|入门", "readme install installation setup getting started quickstart usage scripts start"),
     (r"架构|结构|模块|入口", "architecture structure entry main index app server routes modules"),
@@ -18,21 +20,10 @@ def tokenize(text: str) -> list[str]:
     return re.findall(r"[a-z0-9_]+|[\u3400-\u9fff\U00020000-\U000323af]", text)
 
 
-def chunk_file(path: str, content: str, size: int = 65, overlap: int = 12) -> list[dict]:
-    if not 0 <= overlap < size:
-        raise ValueError("overlap must be smaller than chunk size")
-    lines, chunks = content.split("\n"), []
-    for i in range(0, len(lines), size - overlap):
-        chunks.append(dict(path=path, start=i + 1, end=min(i + size, len(lines)), text="\n".join(lines[i:i + size])))
-        if i + size >= len(lines):
-            break
-    return chunks
-
-
 def search(chunks: list[dict], query: str, limit: int = 6) -> list[dict]:
     expanded = query + " " + " ".join(words for pattern, words in ALIASES if re.search(pattern, query))
     terms = set(tokenize(expanded))
-    docs = [tokenize(c["path"] + " " + c["path"] + " " + c["text"]) for c in chunks]
+    docs = [tokenize(c["path"] + " " + search_text(c)) for c in chunks]
     avg = sum(map(len, docs)) / (len(docs) or 1)
     counts = [Counter(d) for d in docs]
     dfs = {t: sum(t in c for c in counts) for t in terms}
