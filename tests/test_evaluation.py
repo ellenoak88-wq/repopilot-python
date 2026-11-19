@@ -37,6 +37,27 @@ def test_union_coverage_respects_source_gaps_alternatives_and_top_five():
                         [span("a", 1, 2), span("a", 10, 11)])["union_ranks"] == [None]
 
 
+def test_hits_at_5_6_50_and_51_are_scored_from_one_ranking():
+    def span(path, start=1, end=1):
+        return dict(path=path, start=start, end=end)
+
+    items = [span("irrelevant") for _ in range(51)]
+    items[4], items[5], items[49], items[50] = span("a"), span("a", 2, 2), span("b"), span("c")
+    case = {"id": "deep", "evidence_groups": [
+        {"any_of": [span("a")]}, {"any_of": [span("a", 1, 2)]},
+        {"any_of": [span("b")]}, {"any_of": [span("c")]},
+    ]}
+    row = runner.score(case, items)
+    assert row["ranks"] == row["union_ranks"] == [5, None, None, None]
+    assert row["ranks_at_50"] == [5, None, 50, None]
+    assert row["union_ranks_at_50"] == [5, 6, 50, None]
+    assert row["union_recall_at_50"] == .75 and row["single_chunk_recall_at_50"] == .5
+    assert row["results_at_50"] == items[:50] and row["results"] == items[:5]
+    only_b = runner.score({"id": "b", "evidence_groups": [case["evidence_groups"][2]]}, items)
+    assert not only_b["hit_rate_at_5"] and only_b["hit_rate_at_50"]
+    assert not runner.score(case, [])["hit_rate_at_50"]
+
+
 @pytest.fixture
 def corpus(tmp_path, monkeypatch):
     store = Store(tmp_path / "live.db")
@@ -59,6 +80,7 @@ async def test_combined_report_is_atomic_and_holdout_is_aggregate_only(corpus, m
     queries = []
     def status(self,*args): return {"state":"ready"}
     async def retrieve(self,selected,chunks,question,limit,mode):
+        assert limit == 50
         assert selected["id"] == repo["id"] and question in ("value dev","value test")
         assert [c["path"] for c in chunks] == ["a.py"]
         assert self.store.db.execute("SELECT COUNT(*) FROM chats").fetchone()[0] == 0
@@ -74,10 +96,13 @@ async def test_combined_report_is_atomic_and_holdout_is_aggregate_only(corpus, m
         path=folder/"evaluations"/f"loopforge-{split}-compare.json"
         report=json.loads(path.read_text("utf-8"))
         assert set(report["results"]) == {"bm25","hybrid"}
-        assert report["scoringVersion"] == 2
+        assert report["scoringVersion"] == 3 and report["cutoffs"] == [5, 50]
         for result in report["results"].values():
             assert result["metrics"]["union_recall_at_5"] == result["metrics"]["single_chunk_recall_at_5"] == 1
             assert result["evidenceCounts"] == {"total": 1, "union": 1, "single_chunk": 1}
+            assert result["evidenceCountsAt50"] == result["evidenceCounts"]
+            assert result["metrics"]["hit_rate_at_5"] == result["metrics"]["hit_rate_at_50"] == 1
+            assert result["metrics"]["union_recall_at_50"] == result["metrics"]["single_chunk_recall_at_50"] == 1
         assert all(result["metrics"]["recall"]==1 for result in report["results"].values())
         assert ("cases" in report["results"]["hybrid"]) == (split=="dev")
         if split=="test":

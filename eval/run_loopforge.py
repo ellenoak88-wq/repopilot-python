@@ -18,6 +18,7 @@ from repopilot.store import Store
 
 
 HERE = Path(__file__).resolve().parent
+CUTOFFS = (5, 50)
 
 
 def validate(db, snapshot, cases):
@@ -64,7 +65,7 @@ def covers_reference(items, ref):
 
 
 def score(case, items):
-    items = items[:5]
+    items = items[:max(CUTOFFS)]
     ranks = []
     union_ranks = []
     for group in case["evidence_groups"]:
@@ -74,14 +75,29 @@ def score(case, items):
         ranks.append(first)
         union_ranks.append(next((k for k in range(1, len(items) + 1)
                                  if any(covers_reference(items[:k], ref) for ref in group["any_of"])), None))
-    hits = [rank for rank in ranks if rank is not None]
-    single = len(hits) / len(ranks)
-    union = sum(rank is not None for rank in union_ranks) / len(ranks)
-    return dict(id=case["id"], ranks=ranks, union_ranks=union_ranks,
-                union_recall_at_5=union, single_chunk_recall_at_5=single,
-                recall=single, complete=len(hits) == len(ranks),
-                reciprocal_rank=1 / min(hits) if hits else 0,
-                results=[{k: item[k] for k in ("path", "start", "end")} for item in items])
+    results = [{key: item[key] for key in ("path", "start", "end")} for item in items]
+    row = dict(id=case["id"], ranks_at_50=ranks, union_ranks_at_50=union_ranks, results_at_50=results)
+    for k in CUTOFFS:
+        single_hits = [rank for rank in ranks if rank is not None and rank <= k]
+        union_hits = sum(rank is not None and rank <= k for rank in union_ranks)
+        row[f"single_chunk_recall_at_{k}"] = len(single_hits) / len(ranks)
+        row[f"union_recall_at_{k}"] = union_hits / len(ranks)
+        row[f"hit_rate_at_{k}"] = bool(union_hits)
+    # Preserve the original per-case fields and their Top-5 meaning.
+    row.update(ranks=[r if r is not None and r <= 5 else None for r in ranks],
+               union_ranks=[r if r is not None and r <= 5 else None for r in union_ranks],
+               results=results[:5], recall=row["single_chunk_recall_at_5"],
+               complete=row["single_chunk_recall_at_5"] == 1)
+    first = min((r for r in row["ranks"] if r is not None), default=None)
+    row["reciprocal_rank"] = 1 / first if first else 0
+    return row
+
+
+def evidence_counts(rows, k):
+    single = [rank for row in rows for rank in row["ranks_at_50"]]
+    union = [rank for row in rows for rank in row["union_ranks_at_50"]]
+    return dict(total=len(single), union=sum(r is not None and r <= k for r in union),
+                single_chunk=sum(r is not None and r <= k for r in single))
 
 
 def dataset_dir():
@@ -126,18 +142,17 @@ async def evaluate(store, retriever, snapshot, cases, mode, split):
         raise ValueError("当前划分没有可评分的题目。")
     rows = []
     for number, case in enumerate(scored, 1):
-        result = await retriever.retrieve(repo, chunks, case["question"], limit=5, mode=mode)
+        result = await retriever.retrieve(repo, chunks, case["question"], limit=max(CUTOFFS), mode=mode)
         if result["actual"] != mode:
             raise ValueError(f"检索降级：{result['warning']}")
         rows.append(score(case, result["items"]))
         print(f"{mode} · 已评估 {number}/{len(scored)} 题", flush=True)
-    metrics = {name: mean(row[name] for row in rows) for name in
-               ("union_recall_at_5", "single_chunk_recall_at_5", "recall", "complete", "reciprocal_rank")}
-    counts = dict(total=sum(len(row["ranks"]) for row in rows),
-                  union=sum(rank is not None for row in rows for rank in row["union_ranks"]),
-                  single_chunk=sum(rank is not None for row in rows for rank in row["ranks"]))
-    report = dict(snapshot=snapshot, split=split, mode=mode, k=5, scored=len(rows),
-                  excludedCount=len(selected)-len(rows), metrics=metrics, evidenceCounts=counts)
+    names = [f"{metric}_at_{k}" for k in CUTOFFS
+             for metric in ("hit_rate", "union_recall", "single_chunk_recall")]
+    metrics = {name: mean(row[name] for row in rows) for name in [*names, "recall", "complete", "reciprocal_rank"]}
+    report = dict(snapshot=snapshot, split=split, mode=mode, k=5, cutoffs=list(CUTOFFS), scored=len(rows),
+                  excludedCount=len(selected)-len(rows), metrics=metrics, evidenceCounts=evidence_counts(rows, 5),
+                  evidenceCountsAt50=evidence_counts(rows, 50))
     if split == "dev":
         report.update(cases=rows, unanswerable=[c["id"] for c in selected if not c["answerable"]])
     return report
@@ -178,7 +193,7 @@ async def run(args):
             store.close()
     report = (dict(snapshot=snapshot, split=args.split, k=5, results={r["mode"]: r for r in results})
               if args.mode == "compare" else results[0])
-    report.update(scoringVersion=2, chunkerVersion=CHUNKER_VERSION, datasetSha256=digest, completedAt=datetime.now(timezone.utc).isoformat(),
+    report.update(scoringVersion=3, cutoffs=list(CUTOFFS), chunkerVersion=CHUNKER_VERSION, datasetSha256=digest, completedAt=datetime.now(timezone.utc).isoformat(),
                   embeddingModel=retriever.embedder.identity if "hybrid" in modes else None)
     output = args.output or src.parent / "evaluations" / f"loopforge-{args.split}-{args.mode}.json"
     write_report(output, report)
