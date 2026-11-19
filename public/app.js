@@ -86,24 +86,78 @@ function sectionAction(action,section){
   if(action==='delete'&&confirm(`删除分区「${section.name}」？仅可删除没有项目和共享档案的空分区。`))sidebarMutation('/api/sections/delete',{id:section.id,revision:section.revision},'空分区已删除。');
 }
 function historical(item) { return !!item?.indexVersion && item.indexVersion !== active?.indexVersion; }
-function renderSources(sources, old = false) {
+function appendSnapshot(parent, source) {
+  parent.append(el('pre', '', source.text));
+  if (/^https:\/\/github\.com\//i.test(source.url || '')) {
+    const link = el('a', '', '在 GitHub 查看原文');
+    link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    parent.append(link);
+  }
+}
+function canReadCurrent(item) {
+  return !!item.indexVersion && item.indexVersion === active?.indexVersion;
+}
+function readSource(item, source) {
+  return openFile(active.id, source.path, source.start, source.end, item.indexVersion);
+}
+function renderSources(chat) {
+  const sources = chat?.sources || [];
   $('source-count').textContent = sources.length;
+  if (!sources.length) {
+    $('sources').replaceChildren(el('p', 'empty-note', '有源码依据的回答会在这里列出文件和引用片段。'));
+    return;
+  }
   $('sources').replaceChildren(...sources.map(source => {
-    const item = el('details', 'source'); item.id = `source-${source.id}`;
-    const read = el('button', 'secondary', '阅读完整文件'); read.type='button'; read.onclick=()=>openFile(active.id,source.path,source.start,source.end);
-    item.append(el('summary', '', `[${source.id}] ${source.path} · L${source.start}–${source.end}`), el('pre', '', source.text));
-    if (!old) item.append(read); else item.append(el('p', 'muted', '历史版本：此处保留当时的引用摘录，完整文件请查看对应 GitHub commit。'));
-    if (source.url) { const a = el('a', '', '在 GitHub 查看 ↗'); a.href = source.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; item.append(a); }
-    return item;
+    const details = el('details', 'source'); details.id = `source-${source.id}`;
+    details.append(el('summary', '', `[${source.id}] ${source.path} · L${source.start}–${source.end}`));
+    appendSnapshot(details, source);
+    if (canReadCurrent(chat)) {
+      const read = el('button', 'secondary', '阅读完整文件');
+      read.type = 'button'; read.onclick = () => readSource(chat, source); details.append(read);
+    } else details.append(el('p', 'muted', '此处保留回答生成时的源码摘录。'));
+    return details;
   }));
 }
-function renderAnswer(container, answer, sources, markdown = true, old = false) {
-  renderMarkdownAnswer(container, answer, sources, id => {
-    renderSources(sources, old);
+function renderAnswer(container, item) {
+  renderMarkdownAnswer(container, item.answer, item.sources, id => {
+    renderSources(item);
     const target = $(`source-${id}`);
     if (target) target.open = true;
-    const source=sources.find(s=>s.id===id);if(source && !old)openFile(active.id,source.path,source.start,source.end);else target?.scrollIntoView({block:"nearest"});
-  }, markdown);
+    if (canReadCurrent(item)) readSource(item, item.sources.find(source => source.id === id));
+    else {
+      const snapshot = container.parentElement.querySelector(`[data-snapshot="${id}"]`);
+      if (!snapshot) return target?.scrollIntoView({block: 'nearest'});
+      const more = snapshot.parentElement.closest('details');
+      if (more) more.open = true;
+      snapshot.open = true;
+      snapshot.querySelector('summary').focus();
+    }
+  }, item.mode === 'agent');
+}
+function answerEvidence(item, content) {
+  const byId = new Map(item.sources.map(source => [source.id, source]));
+  const cited = new Set(Array.from(content.querySelectorAll('.citation'), button => button.textContent.slice(1, -1)));
+  const ordered = new Set([...cited, ...byId.keys()]);
+  const section = el('div', 'answer-evidence');
+  const more = el('details', 'evidence-more');
+  more.append(el('summary', '', `其他来源（${ordered.size - 1}）`));
+  for (const id of ordered) {
+    const source = byId.get(id);
+    const current = canReadCurrent(item);
+    const control = el(current ? 'button' : 'summary', 'evidence-row');
+    const range = source.start === source.end ? source.start : `${source.start}–${source.end}`;
+    control.append(el('span', 'evidence-action', current ? (cited.has(id) ? '查看依据' : '检索来源') : '查看摘录'),
+      el('span', 'evidence-file', `[${id}] ${source.path}`), el('span', 'evidence-lines', `第 ${range} 行`));
+    const parent = section.childElementCount ? more : section;
+    if (current) {
+      control.type = 'button'; control.onclick = () => readSource(item, source); parent.append(control);
+    } else {
+      const snapshot = el('details', 'evidence-snapshot'); snapshot.dataset.snapshot = id;
+      snapshot.append(control); appendSnapshot(snapshot, source); parent.append(snapshot);
+    }
+  }
+  if (ordered.size > 1) section.append(more);
+  return section;
 }
 function addMessage(item) {
   const user = el('article', 'message user'); user.append(el('div', 'message-label', 'YOU'), el('div', 'message-content', item.question));
@@ -111,10 +165,12 @@ function addMessage(item) {
   label.append(el('small', '', item.mode === 'agent' ? `AGENT · ${item.model || '默认模型'} · ${item.effort || 'default'}` : '检索摘录 · 未调用生成模型'));
   if (historical(item)) label.append(el('small', '', `历史版本 · ${(item.repoSha || '未知').slice(0, 7)} · 当前源码已更新`));
   if (item.versionInferred) label.append(el('small', '', '版本由迁移时索引推定'));
-  const content = el('div', 'message-content'); renderAnswer(content, item.answer, item.sources, item.mode === 'agent', historical(item));
+  const content = el('div', 'message-content'); renderAnswer(content, item);
   const trace = el('details', 'trace'); trace.append(el('summary', '', `${item.trace.length} 个执行步骤 · 查看工具记录`));
   const steps = el('ol'); item.trace.forEach(s => steps.append(el('li', '', `${s.label} — ${s.detail}`))); trace.append(steps);
-  assistant.append(label, content, trace);
+  assistant.append(label, content);
+  if (item.sources.length) assistant.append(answerEvidence(item, content));
+  assistant.append(trace);
   if (item.sessionSummary?.topics.length) {
     const { topics, olderTurns } = item.sessionSummary;
     const details = el('details', 'learning-memory session-summary');
@@ -155,7 +211,7 @@ async function openRepo(id, sessionId) {
   retrieval.setRepository(active);
   $('messages').replaceChildren();
   if (!history.length) { const empty = el('div', 'empty-chat'); empty.append(el('b', '', '从好奇，到理解。'), document.createTextNode('选择一个问题，或描述你想了解的代码。')); $('messages').append(empty); }
-  history.forEach(addMessage); renderSources(history.at(-1)?.sources || [], historical(history.at(-1))); await refreshRepos();
+  history.forEach(addMessage); renderSources(history.at(-1)); await refreshRepos();
   $('regenerate-button').disabled=!history.length || historical(history.at(-1));
   $('sync-button').disabled=!!active.demo;
   $('question').focus();
@@ -228,7 +284,7 @@ async function submitQuestion(question, regenerateId) {
   const view = addMessage(item);
   view.content.textContent = '正在检索代码…';
   let completed = false; let frame;
-  const paint = () => { frame = null; renderAnswer(view.content, item.answer, item.sources, item.mode === 'agent'); $('messages').scrollTop = $('messages').scrollHeight; };
+  const paint = () => { frame = null; renderAnswer(view.content, item); $('messages').scrollTop = $('messages').scrollHeight; };
   try {
     const response = await fetch('/api/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo: active.id, sessionId:currentSession.id, regenerateId, question, model: item.model, effort: item.effort, retrieval: $('retrieval-mode').value, useLearning:$('use-learning').checked }), signal: chatController.signal });
     if (!response.ok) { const error = await response.json(); throw Error(error.error || '请求失败'); }
@@ -237,7 +293,7 @@ async function submitQuestion(question, regenerateId) {
       if (event.type === 'error') throw Error(event.error);
       if (event.type === 'answer-reset') item.answer = '';
       if (event.type === 'delta') { item.answer += event.delta; if (!frame) frame = requestAnimationFrame(paint); }
-      if (event.type === 'source') { item.sources.push(event.source); renderSources(item.sources); }
+      if (event.type === 'source') { item.sources.push(event.source); renderSources(item); }
       if (event.type === 'step') {
         item.trace.push(event); view.steps.append(el('li', '', `${event.label} — ${event.detail}`));
         view.trace.querySelector('summary').textContent = `${event.label} · ${item.trace.length} 个执行步骤`;
@@ -246,7 +302,7 @@ async function submitQuestion(question, regenerateId) {
       if (event.type === 'done') {
         completed = true; Object.assign(item, event.result);
         if(regenerateId!==undefined)history=history.map(h=>h.id===regenerateId?event.result:h);else history.push(event.result);
-        cancelAnimationFrame(frame); paint(); renderSources(item.sources); $('question').value = '';
+        cancelAnimationFrame(frame); paint(); renderSources(item); $('question').value = '';
         view.trace.querySelector('summary').textContent = `${item.trace.length} 个执行步骤 · 已完成`;
         $('messages').replaceChildren();history.forEach(addMessage);$('messages').scrollTop=$('messages').scrollHeight;
       }

@@ -29,7 +29,7 @@ export function createReader(onError) {
       const response=await fetch(`/api/file?repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(path)}`);
       const data=await response.json();if(!response.ok)throw Error(data.error);
       if(current!==requestId)return;
-      if(expectedVersion && expectedVersion !== data.indexVersion) throw Error('索引已变化。请关闭阅读器，在专题页查看保存的引用摘录。');
+      if(expectedVersion && expectedVersion !== data.indexVersion) throw Error('索引已更新。请关闭阅读器，查看保存的引用摘录。');
       content=data.content; const lines=content.split('\n');
       start=Math.max(1,Math.min(lines.length,start));end=Math.max(start,Math.min(lines.length,end));
       $('reader-version').textContent=`${data.demo?'内置示例':`commit ${data.sha.slice(0,7)}`} · ${lines.length} 行`;
