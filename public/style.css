@@ -10,7 +10,7 @@
 }
 .composer#chat-form:focus-within { border-color:#c7cad3; box-shadow:0 3px 9px #2027370d, 0 7px 20px #20273710; }
 .composer #question { display:block; background:transparent; padding:2px 3px; border:0; outline:0; }
-.composer #question::placeholder { color:#838992; }
+.composer #question::placeholder { color:#646b75; opacity:1; }
 .composer .composer-toolbar { position:relative; display:flex; align-items:center; gap:8px; flex-wrap:nowrap; padding-top:6px; }
 .composer-toolbar > button { white-space:nowrap; min-height:32px; }
 .composer-toolbar :is(#send-button,#stop-button,#wiki-open) { flex:none; }
@@ -264,6 +264,7 @@
 .message.assistant .markdown-body pre { font-size: 0.88em; }
 .message.assistant .citation { padding: 2px 6px; min-height: 24px; font-size: 12px; vertical-align: baseline; }
 .answer-evidence { margin: 12px 0; border-block-start: 1px solid var(--line); }
+.sources .empty-note { color: #52665b; font-size: 13px; line-height: 1.6; }
 .evidence-row {
   display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; width: 100%;
   min-height: 44px; align-content: center; padding: 8px; border: 0; border-radius: 6px;
